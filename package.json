@@ -1,0 +1,12 @@
+{
+  "name": "friday-quiz",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Friday quiz: 10 questions, a tiebreaker, and a rota that sorts itself out.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs 8080"
+  },
+  "engines": { "node": ">=18" }
+}

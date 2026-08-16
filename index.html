@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Friday Quiz</title>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="styles.css?v=14">
+<script>
+/* Light unless this browser was told otherwise. Set before the first paint so
+   nobody sees the wrong theme flash past. Key matches THEME_KEY in store.js. */
+try {
+  var t = localStorage.getItem('fridayquiz.theme') || 'light';
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+} catch (e) {}
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>">
+</head>
+<body>
+
+<header class="nav" id="nav" hidden>
+  <div class="nav-inner">
+    <a class="brand" href="#/" data-nav>
+      <span class="brand-mark">Q</span>
+      <span class="brand-name">Friday Quiz</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#/" data-nav data-route="home">Home</a>
+      <a href="#/team" data-nav data-route="team">Team</a>
+      <a href="#/history" data-nav data-route="history">History</a>
+      <a href="#/rules" data-nav data-route="rules">Rules</a>
+    </nav>
+    <div class="nav-right">
+      <button class="whoami" id="whoami" type="button"></button>
+    </div>
+  </div>
+</header>
+
+<main id="app" class="app"></main>
+
+<footer class="foot" hidden></footer>
+
+<div class="conn" id="conn" hidden>Reconnecting…</div>
+<div class="sheet-host" id="sheetHost" hidden></div>
+<div class="toasts" id="toasts"></div>
+
+<script src="js/qrcode.js?v=14"></script>
+<script src="js/store.js?v=14"></script>
+<script src="js/ui.js?v=14"></script>
+<script src="js/net.js?v=14"></script>
+<script src="js/screens.js?v=14"></script>
+<script src="js/live.js?v=14"></script>
+<script src="js/app.js?v=14"></script>
+</body>
+</html>

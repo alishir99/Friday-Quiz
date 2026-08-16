@@ -1,0 +1,173 @@
+/* ui.js: tiny DOM helpers, sheets, toasts. No framework. */
+
+(function () {
+  var QC = window.QC;
+
+  /** el('div.card', {onclick:fn}, [children|string]) */
+  QC.el = function (spec, attrs, kids) {
+    var parts = String(spec).split(/(?=[.#])/);
+    var node = document.createElement(parts.shift() || 'div');
+    parts.forEach(function (p) {
+      if (p[0] === '.') node.classList.add(p.slice(1));
+      else if (p[0] === '#') node.id = p.slice(1);
+    });
+    if (attrs && (Array.isArray(attrs) || typeof attrs === 'string' || attrs instanceof Node)) {
+      kids = attrs; attrs = null;
+    }
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'html') node.innerHTML = v;
+      else if (k === 'text') node.textContent = v;
+      else if (k.slice(0, 2) === 'on') node.addEventListener(k.slice(2), v);
+      else if (k === 'style' && typeof v === 'object') Object.assign(node.style, v);
+      else if (v === true) node.setAttribute(k, '');
+      else node.setAttribute(k, v);
+    });
+    if (kids !== null && kids !== undefined) QC.append(node, kids);
+    return node;
+  };
+
+  QC.append = function (node, kids) {
+    (Array.isArray(kids) ? kids : [kids]).forEach(function (k) {
+      if (k === null || k === undefined || k === false) return;
+      node.appendChild(k instanceof Node ? k : document.createTextNode(String(k)));
+    });
+    return node;
+  };
+
+  QC.clear = function (node) { while (node.firstChild) node.removeChild(node.firstChild); return node; };
+
+  QC.avatar = function (name, cls) {
+    return QC.el('span.av' + (cls ? '.' + cls : ''), { text: QC.initials(name), title: name || '' });
+  };
+
+  QC.chev = '<svg width="9" height="14" viewBox="0 0 9 14" fill="none" aria-hidden="true">' +
+            '<path d="M1.5 1L7.5 7L1.5 13" stroke="currentColor" stroke-width="2" ' +
+            'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  /* toasts */
+
+  QC.toast = function (msg, ms) {
+    var host = document.getElementById('toasts');
+    var t = QC.el('div.toast', { text: msg });
+    host.appendChild(t);
+    setTimeout(function () {
+      t.style.transition = 'opacity .3s, transform .3s';
+      t.style.opacity = '0';
+      t.style.transform = 'translateY(10px)';
+      setTimeout(function () { t.remove(); }, 320);
+    }, ms || 2400);
+  };
+
+  /* sheets (modal dialogs) */
+
+  var sheetHost = null;
+  var lastFocus = null;
+
+  QC.sheet = function (opts) {
+    QC.closeSheet();
+    sheetHost = document.getElementById('sheetHost');
+    lastFocus = document.activeElement;
+
+    var body = QC.el('div.sheet', { role: 'dialog', 'aria-modal': 'true', tabindex: '-1' }, [
+      opts.title ? QC.el('h3', { text: opts.title }) : null,
+      opts.sub ? QC.el('p.sub', { text: opts.sub }) : null,
+      opts.content || null,
+      opts.actions ? QC.el('div.row', { style: { marginTop: '26px', justifyContent: 'flex-end' } }, opts.actions) : null
+    ]);
+
+    QC.clear(sheetHost).appendChild(body);
+    sheetHost.hidden = false;
+    sheetHost.onclick = function (e) { if (e.target === sheetHost && opts.dismissible !== false) QC.closeSheet(); };
+    document.addEventListener('keydown', escClose, true);
+
+    var firstInput = body.querySelector('input, textarea, select, button');
+    (firstInput || body).focus();
+    return body;
+  };
+
+  function escClose(e) { if (e.key === 'Escape') { e.stopPropagation(); QC.closeSheet(); } }
+
+  QC.closeSheet = function () {
+    var host = document.getElementById('sheetHost');
+    if (!host || host.hidden) return;
+    host.hidden = true;
+    QC.clear(host);
+    document.removeEventListener('keydown', escClose, true);
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+    lastFocus = null;
+  };
+
+  /** Promise<boolean> confirm dialog. */
+  QC.confirm = function (opts) {
+    return new Promise(function (resolve) {
+      var done = function (v) { QC.closeSheet(); resolve(v); };
+      QC.sheet({
+        title: opts.title,
+        sub: opts.sub,
+        actions: [
+          QC.el('button.btn.ghost', { type: 'button', text: opts.cancel || 'Cancel', onclick: function () { done(false); } }),
+          QC.el('button.btn' + (opts.danger ? '.danger' : '.primary'),
+            { type: 'button', text: opts.ok || 'Continue', onclick: function () { done(true); } })
+        ]
+      });
+    });
+  };
+
+  /** Promise<string|null> single-line prompt. */
+  QC.ask = function (opts) {
+    return new Promise(function (resolve) {
+      var input = QC.el('input.input', {
+        type: opts.type || 'text',
+        value: opts.value || '',
+        placeholder: opts.placeholder || '',
+        maxlength: opts.maxlength || 80
+      });
+      var submit = function () {
+        var v = input.value.trim();
+        if (!v) { input.focus(); return; }
+        QC.closeSheet(); resolve(v);
+      };
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+      QC.sheet({
+        title: opts.title,
+        sub: opts.sub,
+        content: QC.el('div.field', [input]),
+        actions: [
+          QC.el('button.btn.ghost', { type: 'button', text: 'Cancel',
+            onclick: function () { QC.closeSheet(); resolve(null); } }),
+          QC.el('button.btn.primary', { type: 'button', text: opts.ok || 'Save', onclick: submit })
+        ]
+      });
+      setTimeout(function () { input.focus(); input.select(); }, 40);
+    });
+  };
+
+  /** Person picker sheet. onPick(memberId). */
+  QC.pickPerson = function (opts) {
+    var people = opts.people || (QC.state && QC.state.users) || [];
+    var rows = people.map(function (m) {
+      return QC.el('button.list-row', {
+        type: 'button',
+        style: { width: '100%', background: 'transparent', border: 0, borderBottom: '1px solid var(--line-soft)',
+                 cursor: 'pointer', textAlign: 'left' },
+        onclick: function () { QC.closeSheet(); opts.onPick(m.id); }
+      }, [
+        QC.avatar(m.name),
+        QC.el('div', [
+          QC.el('div.nm', { text: m.name }),
+          opts.subFor ? QC.el('div.rl', { text: opts.subFor(m) }) : null
+        ]),
+        QC.el('div.spacer'),
+        QC.el('span.dim', { html: QC.chev })
+      ]);
+    });
+
+    QC.sheet({
+      title: opts.title,
+      sub: opts.sub,
+      content: rows.length ? QC.el('div.list', rows) : QC.el('p.muted', { text: 'Nobody on the team yet.' })
+    });
+  };
+})();
