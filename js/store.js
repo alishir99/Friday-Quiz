@@ -215,7 +215,7 @@
   };
 
   /* Scannable link to this app, for the big screen and the team page.
-     Always plain black-on-white regardless of theme — that is what a phone
+     Always plain black-on-white regardless of theme - that is what a phone
      camera actually needs, not what looks nice in dark mode. */
   QC.qrSvg = function (text, cellSize) {
     var qr = qrcode(0, 'M');

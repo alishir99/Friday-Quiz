@@ -303,7 +303,7 @@
     function resetPassword(u) {
       QC.confirm({
         title: 'Reset ' + u.name + '’s password?',
-        sub: 'They will get a new, temporary password. Give it to them yourself — in person, on Slack, however.',
+        sub: 'They will get a new, temporary password. Give it to them yourself - in person, on Slack, however.',
         ok: 'Reset', danger: true
       }).then(function (yes) {
         if (!yes) return;
@@ -456,7 +456,7 @@
       document.body.classList.toggle('assist-open');
     }
 
-    /* Docked panel, not a modal — stays open alongside the editor like a
+    /* Docked panel, not a modal - stays open alongside the editor like a
        copilot sidebar. Can hand back a whole quiz as JSON, which the quiz
        master inserts with one click rather than copying it in by hand.
        Chat history lives for the session only. */
@@ -473,7 +473,7 @@
         QC.clear(body);
         if (!history.length) {
           QC.append(body, el('p.assist-empty', {
-            text: 'Ask for one question, a handful of ideas, or the whole thing — e.g. “Write the whole quiz about guessing animal sounds, keep it funny.”'
+            text: 'Ask for one question, a handful of ideas, or the whole thing - e.g. “Write the whole quiz about guessing animal sounds, keep it funny.”'
           }));
         }
         history.forEach(function (m) {
@@ -557,7 +557,7 @@
         }
         QC.screens._openQ = -1;
         renderList(); refreshHead(); saveSoon();
-        QC.toast('Quiz filled in — read it over before you start');
+        QC.toast('Quiz filled in - read it over before you start');
       }
       if (QC.quizProgress(quiz).done > 0) {
         QC.confirm({
@@ -637,7 +637,7 @@
           (function () {
             var needsCorrect = q.correct === null && q.options.some(function (o) { return o.trim(); });
             return el('span.hint' + (needsCorrect ? '.warn' : ''), { text: needsCorrect
-              ? '⚠  No correct answer picked yet — tap a letter.'
+              ? '⚠  No correct answer picked yet - tap a letter.'
               : 'Tap a letter to mark the correct one.' });
           })(),
           el('div.stack', { style: { gap: '10px', marginTop: '4px' } }, q.options.map(function (opt, oi) {

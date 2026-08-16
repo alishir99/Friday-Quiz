@@ -39,27 +39,40 @@ QUIZ_DATA_DIR="C:/Users/you/OneDrive - Company/Friday Quiz" node server.mjs
 Add the link to your SharePoint team page as a Link web part and that is the
 whole integration. No Azure app registration, no IT ticket.
 
-Set `ANTHROPIC_API_KEY` to turn on the quiz-writing assistant (below):
+To turn on the quiz-writing assistant (below), put a DeepSeek key in a `.env`
+file next to `server.mjs`:
 
-```bash
-ANTHROPIC_API_KEY="sk-ant-..." node server.mjs
 ```
+DEEPSEEK_API_KEY=sk-...
+```
+
+`node server.mjs` reads it automatically on startup - no export, no flag.
+Get a key at platform.deepseek.com. `.env` is gitignored, so it never ends up
+committed if you put this under version control later.
 
 ## Quiz assistant
 
-An *✨ Ask the assistant* button sits in the quiz editor, next to the save
-status — only the quiz master sees it, same as the editor itself. It's a
-small chat: ask for question ideas and it writes back, backed by Claude with
-a live web search. It always fact-checks before answering rather than
-trusting its own memory, and every factual claim comes with a source link
-underneath — read it before you trust it, the same as you would a
-teammate's guess.
+An *✨ Ask the assistant* panel docks to the right of the quiz editor - only
+the quiz master sees it, same as the editor itself. Ask for one question, a
+handful of ideas, or the whole thing: *"Write the whole quiz about guessing
+animal sounds, keep it funny"* gets back all ten questions, options, correct
+answers and the tiebreaker in one go, with an **Insert into quiz** button
+that fills every field for you. If the quiz already has real work in it,
+inserting asks first - it replaces everything, so there's a chance to back
+out.
 
-It needs `ANTHROPIC_API_KEY` set when the server starts (see above). Without
-it, the button is still there but sending a message shows an error saying
-so. Nothing about it is stored: the conversation lives in the browser tab
-only and is gone on refresh — it's a drafting aid, not part of the quiz
-record.
+Be clear-eyed about what this is: it's DeepSeek's own knowledge, not a live
+web search, so there's no source link to check a fact against - it's told to
+say when it's unsure rather than invent something confident-sounding, but
+that's not the same as verification. Treat facts the assistant gives you the
+way you'd treat a teammate's confident guess: fine for "guess the animal
+sound," worth a second look before it becomes the tiebreaker on something
+that matters.
+
+Without `DEEPSEEK_API_KEY` set, the panel is still there but sending a
+message shows an error saying so. Nothing about it is stored server-side:
+the conversation lives in the browser tab only and is gone on refresh - it's
+a drafting aid, not part of the quiz record.
 
 ---
 
@@ -67,7 +80,7 @@ record.
 
 Sign-in is name and password. First time creates the account with whatever
 password you type; every time after that it has to match. Nothing is
-collected beyond the name and password — no email, no other personal data.
+collected beyond the name and password - no email, no other personal data.
 The session is a long-lived (180-day) HttpOnly cookie, so a phone or laptop
 that has signed in once stays signed in.
 
@@ -94,13 +107,13 @@ instead of typing the address in.
 ## Admin
 
 A fixed person, separate from the weekly quiz master/topic picker rotation.
-Nobody is admin by default — whoever gets to the Team page first and presses
+Nobody is admin by default - whoever gets to the Team page first and presses
 *Become admin* is it, and after that only they can hand it to someone else
 (also from the Team page). The admin has three jobs: resetting a forgotten
 password, editing the Rules page (nobody else can), and hand-picking next
 week's quiz master and topic picker from the home screen if the algorithm's
-choice needs overriding. Everything about running an actual Friday — writing
-the quiz, presenting it, controlling the slides — stays with that week's quiz
+choice needs overriding. Everything about running an actual Friday - writing
+the quiz, presenting it, controlling the slides - stays with that week's quiz
 master, same as always. The two roles are kept deliberately separate: the
 quiz master is whoever the rotation lands on this week, the admin is a fixed
 person who doesn't change week to week.
@@ -121,7 +134,7 @@ person who doesn't change week to week.
    its own; there is nothing for them to find or join. The lobby that shows up
    first has a QR code, for anyone still fishing their phone out. The topic
    stays hidden from everyone but the quiz master and topic picker right up
-   until this moment — pressing Start is what reveals it, on the lobby screen.
+   until this moment - pressing Start is what reveals it, on the lobby screen.
 4. **Ten questions.** Each one goes up on the big screen; players tap an answer
    on their phone and can change it until the next question. The big screen
    shows how many have answered, not what they picked.

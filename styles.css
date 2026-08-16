@@ -458,11 +458,38 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 .sheet h3 { font-size: 26px; margin-bottom: 8px; }
 .sheet .sub { color: var(--ink-2); font-size: 16px; margin-bottom: 24px; }
 
-.assist-panel { display: flex; flex-direction: column; }
-.assist-log {
-  display: flex; flex-direction: column; gap: 16px;
-  max-height: 42vh; overflow-y: auto; padding-right: 4px;
+@keyframes fade { from { opacity: 0 } }
+@keyframes pop { from { opacity: 0; transform: translateY(16px) scale(.97) } }
+
+/* Quiz assistant: a docked sidebar (Gemini-in-Gmail style), not a modal -
+   it stays open alongside the editor instead of blocking it. Always in the
+   DOM; the open/closed state is a body class so toggling costs no re-render. */
+.assist-dock {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 250;
+  width: min(400px, 100vw);
+  background: var(--surface); border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column;
+  transform: translateX(105%);
+  transition: transform .28s var(--ease-out);
 }
+body.assist-open .assist-dock { transform: translateX(0); }
+@media (min-width: 900px) {
+  body.assist-open .app { padding-right: calc(min(400px, 100vw) + 32px); transition: padding-right .28s var(--ease-out); }
+}
+
+.assist-dock-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 20px; border-bottom: 1px solid var(--line-soft); flex: none;
+}
+.assist-dock-head h3 { font-size: 18px; margin: 0; flex: 1; }
+
+.assist-dock-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 18px 20px; display: flex; flex-direction: column; gap: 18px;
+}
+.assist-empty { color: var(--ink-3); font-size: 14px; line-height: 1.55; }
+
 .assist-msg { font-size: 15px; line-height: 1.5; }
 .assist-role {
   font-size: 12px; font-weight: 700; text-transform: uppercase;
@@ -470,12 +497,15 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 }
 .assist-msg.user .assist-role { color: var(--accent); }
 .assist-text { white-space: pre-wrap; color: var(--ink); }
-.assist-cites { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
-.assist-cites a { font-size: 13px; color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
-.assist-cites a:hover { text-decoration: underline; }
 
-@keyframes fade { from { opacity: 0 } }
-@keyframes pop { from { opacity: 0; transform: translateY(16px) scale(.97) } }
+.assist-quiz-preview {
+  border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px; margin-top: 10px; background: var(--surface-2);
+  font-size: 14px; color: var(--ink-2);
+}
+
+.assist-dock-foot { border-top: 1px solid var(--line-soft); padding: 14px 16px; flex: none; }
+.assist-dock-foot textarea { resize: none; }
 
 /* Toasts */
 
@@ -724,7 +754,7 @@ body.playing .app { padding: 0; max-width: none; }
   --pad: clamp(28px, 5vw, 80px);
 }
 
-/* Always plain black-on-white, in a white card of its own — a phone camera
+/* Always plain black-on-white, in a white card of its own - a phone camera
    does not care what theme the projector is in, and dark mode would just
    make it harder to scan. */
 .qr-code { display: inline-flex; background: #fff; padding: 10px; border-radius: 12px; line-height: 0; }

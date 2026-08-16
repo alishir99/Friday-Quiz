@@ -84,7 +84,7 @@
             : r.diff === 0 ? 'spot on' : 'out by ' + num(r.diff) })
         ]),
         el('div.spacer'),
-        el('div.tie-guess', { text: r.guess === null ? '—' : num(r.guess) + (unit ? ' ' + unit : '') }),
+        el('div.tie-guess', { text: r.guess === null ? '-' : num(r.guess) + (unit ? ' ' + unit : '') }),
         closest ? el('span.pill.done.tie-flag', { text: r.diff === 0 ? '🎯 Exact' : 'Closest' }) : null
       ]);
     }));

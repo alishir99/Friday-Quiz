@@ -113,10 +113,10 @@ const MAX_NAME = 40;
 const MAX_RULES = 20000;
 const MIN_PASSWORD = 4;
 
-/* Quiz-writing assistant. Raw HTTPS rather than an SDK — this app has no
+/* Quiz-writing assistant. Raw HTTPS rather than an SDK - this app has no
    npm install step at all, and that stays true for this too. DeepSeek has
    no hosted web-search tool the way some providers do, so unlike a
-   search-backed assistant this one cannot cite live sources — it answers
+   search-backed assistant this one cannot cite live sources - it answers
    from what the model already knows, and is told to say so when unsure
    rather than inventing a confident-sounding fact. */
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
@@ -135,7 +135,7 @@ When asked to write a whole quiz, "all the questions", or a batch of questions, 
 }
 Write exactly 10 questions unless told otherwise. Each question needs 2 to 6 short options, one correct 0-based "correct" index, and a short optional "note" with a fun fact or explanation. The tiebreaker's "answer" must be a plain number.
 
-Match whatever tone is asked for — funny, serious, whatever. You have no way to check the web right now, so get facts as right as you can from what you already know, and if you are genuinely unsure of one, say so plainly in your one-sentence reply rather than presenting a guess as certain.`;
+Match whatever tone is asked for - funny, serious, whatever. You have no way to check the web right now, so get facts as right as you can from what you already know, and if you are genuinely unsure of one, say so plainly in your one-sentence reply rather than presenting a guess as certain.`;
 
 function extractQuiz(text) {
   const m = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -144,7 +144,7 @@ function extractQuiz(text) {
     const parsed = JSON.parse(m[1]);
     if (parsed && Array.isArray(parsed.questions) && parsed.questions.length) {
       const cleaned = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
-      return { reply: cleaned || 'Here you go — take a look below.', quiz: parsed };
+      return { reply: cleaned || 'Here you go - take a look below.', quiz: parsed };
     }
   } catch {}
   return { reply: text || '(no reply)', quiz: null };
@@ -152,7 +152,7 @@ function extractQuiz(text) {
 
 async function askAssistant(history, topic) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) throw new Error('The assistant needs DEEPSEEK_API_KEY set — put it in .env and restart the server');
+  if (!apiKey) throw new Error('The assistant needs DEEPSEEK_API_KEY set - put it in .env and restart the server');
 
   const system = ASSIST_SYSTEM + (topic ? `\n\nThis week's topic, if it helps: "${topic}"` : '');
 
@@ -576,7 +576,7 @@ async function api(req, res, path) {
   /* Name plus password. First time creates the account with that password;
      every time after that it has to match. A teammate who forgot theirs gets
      it reset by the admin from the team page (see /api/reset-password) rather
-     than through an email flow — nothing beyond a name is collected here. */
+     than through an email flow - nothing beyond a name is collected here. */
   if (path === '/api/login' && req.method === 'POST') {
     const { name, password } = await readBody(req);
     const clean = String(name || '').trim().slice(0, MAX_NAME);
@@ -597,7 +597,7 @@ async function api(req, res, path) {
       await persist();
     } else if (!verifyPassword(pass, user.salt, user.hash)) {
       // Could be a typo, or someone else who happens to share this name and
-      // has never seen this account's password — the message covers both.
+      // has never seen this account's password - the message covers both.
       return json(res, 401, { error: 'Wrong password for "' + user.name + '". If that is not you, sign in with a different name (e.g. add a last initial).' });
     }
     return json(res, 200, { ok: true, me: user.id }, { 'set-cookie': setTokenCookie(user.id) });
@@ -625,7 +625,7 @@ async function api(req, res, path) {
 
   /* Forgot password: the admin resets it and hands over the temporary
      password directly (in person, on Slack). There is no email on file, so
-     this is the recovery path — it does mean that if the admin is ever
+     this is the recovery path - it does mean that if the admin is ever
      unreachable, nobody else can help a locked-out teammate back in. */
   if (path === '/api/reset-password' && req.method === 'POST') {
     if (!requireUser()) return;
@@ -640,7 +640,7 @@ async function api(req, res, path) {
   }
 
   /* Admin: a fixed person, not part of the weekly quiz-master/topic-picker
-     rotation. Nobody starts as admin — whoever gets there first claims it,
+     rotation. Nobody starts as admin - whoever gets there first claims it,
      then only that person can hand it to someone else. */
   if (path === '/api/admin/claim' && req.method === 'POST') {
     if (!requireUser()) return;
@@ -778,7 +778,7 @@ async function api(req, res, path) {
   if (path === '/api/roles' && req.method === 'POST') {
     if (!requireUser()) return;
     // Deciding who does what next week is an admin call, not the weekly quiz
-    // master's — those stay separate on purpose.
+    // master's - those stay separate on purpose.
     if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can change this' });
     const { quizMasterId, topicPickerId } = await readBody(req);
     if (!db.upcoming) return json(res, 400, { error: 'Nothing scheduled' });
