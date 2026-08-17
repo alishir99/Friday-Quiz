@@ -98,11 +98,109 @@ things before committing:
 
 ### On a plain VM instead
 
-If you would rather run it on a Linux box you control, `deploy/` has a systemd
-unit and a Caddyfile for automatic HTTPS. That path is more work — you open
-firewall ports and patch the OS yourself — but it avoids depending on a
-platform. Set `QUIZ_BIND=127.0.0.1` there so the plain-HTTP port isn't exposed;
-Caddy handles TLS in front.
+See [the Oracle Cloud walkthrough](#free-forever-on-an-oracle-cloud-vm) below —
+free forever, and it runs this same code unchanged.
+
+---
+
+## Free forever, on an Oracle Cloud VM
+
+More setup than a platform, but no monthly bill and nothing to rewrite. The
+commands below were run end to end on a clean Ubuntu 24.04 image.
+
+### 1. Make the VM
+
+Oracle Cloud console → **Compute → Instances → Create instance**.
+
+- **Image:** Ubuntu 24.04
+- **Shape:** `VM.Standard.A1.Flex` (Ampere ARM). The Always Free allowance is
+  2 OCPU / 12 GB as of June 2026. If your region is out of ARM capacity, the
+  `VM.Standard.E2.1.Micro` x86 shape is also Always Free and is ample here.
+- Add your SSH public key.
+
+Always Free shapes don't expire the way trial credits do.
+
+### 2. Open ports 80 and 443 — in *both* places
+
+This is the step that costs people an hour. Oracle blocks traffic at two
+independent layers and you have to open both.
+
+**a) The cloud firewall.** Instance → *Subnet* → *Security List* → add ingress
+rules, source `0.0.0.0/0`, for TCP **80** and **443**.
+
+**b) The VM's own firewall.** Oracle's Ubuntu images ship iptables rules that
+drop everything:
+
+```bash
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save
+```
+
+### 3. Install Node and Caddy
+
+```bash
+sudo apt update
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs caddy git
+node --version   # v22 or newer
+```
+
+### 4. Put the app on the box
+
+Order matters here: **do not** use `useradd --create-home`. It fills the
+directory with shell profile files, and `git clone` then refuses to write into
+a non-empty directory.
+
+```bash
+sudo useradd --system --home-dir /opt/friday-quiz --shell /usr/sbin/nologin quiz
+sudo git clone https://github.com/alishir99/Friday-Quiz.git /opt/friday-quiz
+sudo chown -R quiz:quiz /opt/friday-quiz
+```
+
+### 5. Secrets
+
+```bash
+sudo -u quiz tee /opt/friday-quiz/.env >/dev/null <<'EOF'
+DEEPSEEK_API_KEY=sk-your-new-key
+QUIZ_INVITE_CODE=pick-something-only-your-team-knows
+EOF
+sudo chmod 600 /opt/friday-quiz/.env
+```
+
+The app reads this file itself on startup — no shell export needed.
+
+### 6. Run it as a service
+
+```bash
+sudo cp /opt/friday-quiz/deploy/friday-quiz.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now friday-quiz
+curl -s localhost:8080/api/state    # {"anonymous":true,...}
+```
+
+`QUIZ_BIND=127.0.0.1` is set in the unit, so the plain-HTTP port is reachable
+only from the VM itself. Caddy sits in front of it.
+
+### 7. HTTPS
+
+Point an `A` record at the VM's public IP, then:
+
+```bash
+sudo cp /opt/friday-quiz/deploy/Caddyfile /etc/caddy/Caddyfile
+sudo sed -i 's/quiz.example.com/quiz.yourdomain.com/' /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+The certificate is issued and renewed automatically.
+
+### Running it
+
+```bash
+cd /opt/friday-quiz && sudo -u quiz git pull && sudo systemctl restart friday-quiz
+journalctl -u friday-quiz -f          # logs
+sudo tar czf ~/quiz-$(date +%F).tgz -C /opt/friday-quiz data   # backup
+```
 
 ---
 

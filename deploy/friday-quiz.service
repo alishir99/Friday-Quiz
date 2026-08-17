@@ -22,9 +22,9 @@ ExecStart=/usr/bin/node server.mjs
 Environment=PORT=8080
 Environment=QUIZ_BIND=127.0.0.1
 
-# Secrets and the invite code live in this file, not in the unit, so they stay
-# out of `systemctl show` and out of git.
-EnvironmentFile=/opt/friday-quiz/.env
+# DEEPSEEK_API_KEY and QUIZ_INVITE_CODE live in /opt/friday-quiz/.env, which
+# the app reads itself on startup. Nothing to declare here, and the secrets
+# stay out of `systemctl show`.
 
 Restart=always
 RestartSec=3
