@@ -128,22 +128,53 @@ independent layers and you have to open both.
 **a) The cloud firewall.** Instance → *Subnet* → *Security List* → add ingress
 rules, source `0.0.0.0/0`, for TCP **80** and **443**.
 
-**b) The VM's own firewall.** Oracle's Ubuntu images ship iptables rules that
-drop everything:
+**b) The VM's own firewall.** Oracle's Ubuntu images ship iptables rules ending
+in a catch-all REJECT. iptables reads top to bottom and stops at the first
+match, so the new rules have to go **above** that REJECT or they do nothing.
+
+Find its line number first — don't assume it, it varies by image:
 
 ```bash
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo iptables -L INPUT --line-numbers | grep REJECT
+```
+
+Insert both rules at that number (if REJECT is on line 5, use 5 twice — each
+insert pushes REJECT further down):
+
+```bash
+sudo iptables -I INPUT 5 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 5 -m state --state NEW -p tcp --dport 443 -j ACCEPT
 sudo netfilter-persistent save
+```
+
+Check REJECT is now last:
+
+```bash
+sudo iptables -L INPUT -n --line-numbers
 ```
 
 ### 3. Install Node and Caddy
 
+Node, from NodeSource:
+
 ```bash
 sudo apt update
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs caddy git
+sudo apt install -y nodejs git
 node --version   # v22 or newer
+```
+
+Caddy is **not** in Ubuntu's repositories, so add its official one first:
+
+```bash
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install -y caddy
+caddy version
 ```
 
 ### 4. Put the app on the box
