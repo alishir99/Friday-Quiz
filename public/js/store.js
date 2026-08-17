@@ -13,6 +13,7 @@
   QC.MIN_OPTIONS = 2;
   QC.MAX_OPTIONS = 6;
   var THEME_KEY = 'fridayquiz.theme';
+  var ASSIST_W_KEY = 'fridayquiz.assistWidth';
 
   QC.uid = function () {
     return Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
@@ -222,6 +223,30 @@
     qr.addData(text);
     qr.make();
     return QC.el('div.qr-code', { html: qr.createSvgTag({ cellSize: cellSize || 5, margin: 8 }) });
+  };
+
+  /* How wide the assistant panel is, dragged by its edge and remembered per
+     browser. Clamped against the window so a narrow laptop can never end up
+     with a panel wider than the editor beside it. */
+  QC.assistWidth = {
+    MIN: 300,
+    MAX: 720,
+    clamp: function (px) {
+      var room = Math.max(QC.assistWidth.MIN, window.innerWidth - 340);
+      return Math.max(QC.assistWidth.MIN, Math.min(px, Math.min(QC.assistWidth.MAX, room)));
+    },
+    read: function () {
+      var v;
+      try { v = parseInt(localStorage.getItem(ASSIST_W_KEY), 10); } catch (e) {}
+      return v > 0 ? v : 400;
+    },
+    /** Apply a width now; only writes it down when the drag has finished. */
+    apply: function (px, remember) {
+      var w = QC.assistWidth.clamp(px === undefined ? QC.assistWidth.read() : px);
+      document.documentElement.style.setProperty('--assist-w', w + 'px');
+      if (remember) { try { localStorage.setItem(ASSIST_W_KEY, String(w)); } catch (e) {} }
+      return w;
+    }
   };
 
   /* theme */

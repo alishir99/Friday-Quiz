@@ -42,6 +42,17 @@
     return QC.el('span.av' + (cls ? '.' + cls : ''), { text: QC.initials(name), title: name || '' });
   };
 
+  /* Lucide-style sparkles: the conventional "assistant" mark. An SVG rather
+     than an emoji, so it inherits currentColor and renders the same on every
+     machine instead of turning into whatever glyph the OS happens to ship. */
+  QC.sparkle = '<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+    '<path d="M11.43 2.9a.6.6 0 0 1 1.14 0l1.26 3.88a3 3 0 0 0 1.92 1.92l3.88 1.26a.6.6 0 0 1 0 1.14l-3.88 1.26a3 3 0 0 0-1.92 1.92l-1.26 3.88a.6.6 0 0 1-1.14 0l-1.26-3.88a3 3 0 0 0-1.92-1.92L4.37 11.1a.6.6 0 0 1 0-1.14l3.88-1.26a3 3 0 0 0 1.92-1.92z"/>' +
+    '<path d="M18.66 16.5a.34.34 0 0 1 .64 0l.44 1.36a1.5 1.5 0 0 0 .96.96l1.36.44a.34.34 0 0 1 0 .64l-1.36.44a1.5 1.5 0 0 0-.96.96l-.44 1.36a.34.34 0 0 1-.64 0l-.44-1.36a1.5 1.5 0 0 0-.96-.96l-1.36-.44a.34.34 0 0 1 0-.64l1.36-.44a1.5 1.5 0 0 0 .96-.96z"/></svg>';
+
+  QC.arrowUp = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+               '<path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="1.8" ' +
+               'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
   QC.chev = '<svg width="9" height="14" viewBox="0 0 9 14" fill="none" aria-hidden="true">' +
             '<path d="M1.5 1L7.5 7L1.5 13" stroke="currentColor" stroke-width="2" ' +
             'stroke-linecap="round" stroke-linejoin="round"/></svg>';

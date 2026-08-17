@@ -15,6 +15,12 @@
     var pass = el('input.input', {
       placeholder: 'Password', type: 'password', autocomplete: 'current-password', maxlength: 80
     });
+    /* Only new accounts need this, so it stays out of the way until the
+       server says one is required - the team never sees it after joining. */
+    var invite = el('input.input', {
+      placeholder: 'Invite code', autocomplete: 'off', maxlength: 80
+    });
+    var inviteField = el('div.stack', { hidden: true, style: { gap: '12px' } }, [invite]);
     var err = el('p.auth-err', { hidden: true });
     var btn = el('button.btn.primary.lg.block', { type: 'button', text: 'Continue' });
 
@@ -25,18 +31,24 @@
       if (!p) { pass.focus(); return; }
       btn.disabled = true;
       err.hidden = true;
-      QC.net.login(v, p)
+      QC.net.login(v, p, invite.value.trim())
         .then(function () { QC.boot(); })
         .catch(function (e) {
           err.textContent = e.message;
           err.hidden = false;
           btn.disabled = false;
-          pass.focus();
+          if (e.body && e.body.needInvite) {
+            inviteField.hidden = false;
+            invite.focus();
+          } else {
+            pass.focus();
+          }
         });
     }
     btn.onclick = go;
     name.addEventListener('keydown', function (e) { if (e.key === 'Enter') pass.focus(); });
     pass.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+    invite.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
 
     return el('div.auth', [
       el('div.auth-card', [
@@ -46,6 +58,7 @@
           text: 'Sign in with your name and password to join this week’s quiz.' }),
 
         el('div.stack', { style: { gap: '12px' } }, [name, pass]),
+        inviteField,
         err,
         el('div', { style: { marginTop: '20px' } }, [btn]),
         el('p.dim.small', { style: { marginTop: '18px', textAlign: 'center' },
@@ -445,48 +458,71 @@
             }
             setOpen(quiz.questions.length);
           } }) : el('span.pill.done', { text: '✓ Ready to play. Start it from the home screen' }),
-          el('button.btn.ghost.sm', { type: 'button', text: '✨ Ask the assistant', onclick: toggleAssist }),
           el('div.spacer'),
           saveState
         ])
       ]);
     }
 
+    // Only used on a phone, where there is no room to keep the panel open.
     function toggleAssist() {
       document.body.classList.toggle('assist-open');
     }
 
-    /* Docked panel, not a modal - stays open alongside the editor like a
-       copilot sidebar. Can hand back a whole quiz as JSON, which the quiz
-       master inserts with one click rather than copying it in by hand.
-       Chat history lives for the session only. */
+    /* Always-there panel down the right-hand side, not something you open:
+       writing the quiz is a sit-at-a-monitor job and Quizzy is part of that
+       screen. Drag its left edge to resize. It can hand back a whole quiz as
+       JSON, which the quiz master inserts with one click rather than copying
+       it in by hand. Chat history lives for the session only. */
     function assistDock() {
       var history = QC.screens._assistHistory || (QC.screens._assistHistory = []);
-      var body = el('div.assist-dock-body');
-      var input = el('textarea.textarea', {
-        rows: '2', placeholder: 'Ask for a question, or "write the whole quiz about ___"'
+      var body = el('div.assist-body');
+      var input = el('textarea.assist-input', {
+        rows: '1', placeholder: 'Ask Quizzy to write a question, or the whole quiz'
       });
-      var sendBtn = el('button.btn.primary.sm', { type: 'button', text: 'Send' });
-      var err = el('p.auth-err', { hidden: true });
+      var sendBtn = el('button.assist-send', {
+        type: 'submit', 'aria-label': 'Send', disabled: true, html: QC.arrowUp
+      });
+      var err = el('p.assist-err', { hidden: true });
+
+      // Worth a click rather than a wall of instructions: the first one is
+      // the whole point of the panel.
+      var EXAMPLES = [
+        'Write the whole quiz about guessing animal sounds, keep it funny',
+        'Give me one hard question about the 1980s',
+        'Ten questions on world capitals, mixed difficulty'
+      ];
+
+      function welcome() {
+        return el('div.assist-welcome', [
+          el('p', { text: 'Get help from Quizzy, your humble servant. Ask for a single question, a few ideas, or the whole quiz in one go.' }),
+          el('div.assist-try', { text: 'Try' }),
+          el('div.assist-examples', EXAMPLES.map(function (ex) {
+            return el('button.assist-example', { type: 'button', text: ex,
+              onclick: function () { send(ex); } });
+          }))
+        ]);
+      }
+
+      /* No rule under the title. The page header already draws a line right
+         above this panel, and a second one a little lower down never lines up
+         with it - which reads as a mistake rather than as structure. */
 
       function renderBody() {
         QC.clear(body);
-        if (!history.length) {
-          QC.append(body, el('p.assist-empty', {
-            text: 'Ask for one question, a handful of ideas, or the whole thing - e.g. “Write the whole quiz about guessing animal sounds, keep it funny.”'
-          }));
-        }
+        if (!history.length) QC.append(body, welcome());
         history.forEach(function (m) {
           var msg = el('div.assist-msg.' + m.role, [
-            el('div.assist-role', { text: m.role === 'user' ? 'You' : 'Assistant' }),
+            el('div.assist-role', { text: m.role === 'user' ? 'You' : 'Quizzy' }),
             el('div.assist-text', { text: m.text })
           ]);
           if (m.quiz) {
-            QC.append(msg, el('div.assist-quiz-preview', [
-              el('div', { text: m.quiz.questions.length + ' question' + (m.quiz.questions.length === 1 ? '' : 's')
-                + ' + tiebreaker, ready to insert' }),
-              el('button.btn.primary.sm', { type: 'button', style: { marginTop: '10px' }, text: 'Insert into quiz',
-                onclick: function () { insertGenerated(m.quiz); } })
+            QC.append(msg, el('div.assist-card', [
+              el('div.assist-card-title', { text: m.quiz.questions.length + ' question'
+                + (m.quiz.questions.length === 1 ? '' : 's') + ' and a tiebreaker' }),
+              el('div.assist-card-sub', { text: 'Drops straight into the editor beside you.' }),
+              el('button.btn.primary.sm', { type: 'button', style: { marginTop: '12px' },
+                text: 'Insert into quiz', onclick: function () { insertGenerated(m.quiz); } })
             ]));
           }
           QC.append(body, msg);
@@ -494,43 +530,94 @@
         body.scrollTop = body.scrollHeight;
       }
 
-      function send() {
-        var text = input.value.trim();
-        if (!text) return;
+      function send(preset) {
+        var text = (preset || input.value).trim();
+        if (!text || sendBtn.disabled && !preset) return;
         err.hidden = true;
         history.push({ role: 'user', text: text });
         input.value = '';
+        resize();
         sendBtn.disabled = true;
         renderBody();
         QC.net.assist(history, quiz.topic || u.topic).then(function (r) {
           history.push({ role: 'assistant', text: r.reply, quiz: r.quiz });
-          sendBtn.disabled = false;
           renderBody();
         }).catch(function (e) {
-          sendBtn.disabled = false;
           err.textContent = e.message;
           err.hidden = false;
+        }).then(function () {
+          sendBtn.disabled = !input.value.trim();
         });
       }
-      sendBtn.onclick = send;
+
+      // Grows with what is typed, up to the cap the stylesheet sets.
+      function resize() {
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+      }
+      input.addEventListener('input', function () {
+        resize();
+        sendBtn.disabled = !input.value.trim();
+      });
       input.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
       });
 
+      var form = el('form.assist-field');
+      form.addEventListener('submit', function (e) { e.preventDefault(); send(); });
+      QC.append(form, [input, sendBtn]);
+
       renderBody();
 
       return el('aside.assist-dock', [
-        el('div.assist-dock-head', [
-          el('span', { text: '✨', 'aria-hidden': 'true' }),
-          el('h3', { text: 'Quiz assistant' }),
-          el('button.btn-icon', { type: 'button', 'aria-label': 'Close', text: '✕', onclick: toggleAssist })
+        resizeGrip(),
+        el('div.assist-head', [
+          el('span.assist-mark', { html: QC.sparkle }),
+          el('h3', { text: 'Quizzy' }),
+          el('div.spacer'),
+          el('button.btn-icon.assist-close', { type: 'button', 'aria-label': 'Hide Quizzy', text: '✕',
+            onclick: toggleAssist })
         ]),
         body,
-        el('div.assist-dock-foot', [
-          input, err,
-          el('div.row', { style: { marginTop: '10px', justifyContent: 'flex-end' } }, [sendBtn])
-        ])
+        el('div.assist-foot', [form, err])
       ]);
+    }
+
+    /* Drag the left edge to set how much of the screen Quizzy gets. Pointer
+       events rather than mouse ones, so a pen or a touchscreen works too. */
+    function resizeGrip() {
+      var grip = el('div.assist-grip', {
+        role: 'separator', 'aria-orientation': 'vertical', 'aria-label': 'Resize the assistant panel', tabindex: '0'
+      });
+
+      grip.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        grip.setPointerCapture(e.pointerId);
+        document.body.classList.add('assist-resizing');
+
+        function move(ev) { QC.assistWidth.apply(window.innerWidth - ev.clientX); }
+        function stop(ev) {
+          // Written down only once the drag ends, not on every mouse move.
+          QC.assistWidth.apply(window.innerWidth - ev.clientX, true);
+          document.body.classList.remove('assist-resizing');
+          grip.removeEventListener('pointermove', move);
+          grip.removeEventListener('pointerup', stop);
+          grip.removeEventListener('pointercancel', stop);
+        }
+        grip.addEventListener('pointermove', move);
+        grip.addEventListener('pointerup', stop);
+        grip.addEventListener('pointercancel', stop);
+      });
+
+      // Same thing from the keyboard, for anyone not using a mouse.
+      grip.addEventListener('keydown', function (e) {
+        var step = e.key === 'ArrowLeft' ? 24 : (e.key === 'ArrowRight' ? -24 : 0);
+        if (!step) return;
+        e.preventDefault();
+        QC.assistWidth.apply(QC.assistWidth.read() + step, true);
+      });
+
+      return grip;
     }
 
     /* Swap in a full quiz the assistant proposed. Replaces everything, so
@@ -963,12 +1050,20 @@
     refreshHead();
     renderList();
 
+    // Only this screen reserves room down the right-hand side for Quizzy.
+    QC.assistWidth.apply();
+    document.body.classList.add('assist-docked');
+
     return el('div.stack', [
       el('a.btn.quiet.sm', { href: '#/', 'data-nav': '', text: '‹  Back', style: { alignSelf: 'flex-start' } }),
       headEl, listEl,
       el('p.dim.small.center', { style: { marginTop: '26px' },
         text: 'Saves as you type. Nobody else can see the answers until you start the quiz.' }),
-      assistDock()
+      assistDock(),
+      // Phone-sized screens have no room to keep the panel open, so there it
+      // slides over the editor from this button instead.
+      el('button.assist-fab', { type: 'button', 'aria-label': 'Ask Quizzy', html: QC.sparkle,
+        onclick: toggleAssist })
     ]);
   };
 

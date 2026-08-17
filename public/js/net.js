@@ -19,13 +19,22 @@
       credentials: 'same-origin'
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
-        if (!r.ok) throw new Error(j.error || ('Request failed (' + r.status + ')'));
+        if (!r.ok) {
+          var err = new Error(j.error || ('Request failed (' + r.status + ')'));
+          // Callers sometimes need more than the message - the sign-in screen
+          // reveals its invite field off the flag the server sends back.
+          err.body = j;
+          err.status = r.status;
+          throw err;
+        }
         return j;
       });
     });
   };
 
-  Net.login  = function (name, password) { return Net.call('api/login', 'POST', { name: name, password: password }); };
+  Net.login = function (name, password, invite) {
+    return Net.call('api/login', 'POST', { name: name, password: password, invite: invite });
+  };
   Net.logout = function () { return Net.call('api/logout', 'POST', {}); };
   Net.changePassword = function (oldPassword, newPassword) {
     return Net.call('api/change-password', 'POST', { oldPassword: oldPassword, newPassword: newPassword });

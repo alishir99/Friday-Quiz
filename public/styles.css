@@ -461,51 +461,145 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 @keyframes fade { from { opacity: 0 } }
 @keyframes pop { from { opacity: 0; transform: translateY(16px) scale(.97) } }
 
-/* Quiz assistant: a docked sidebar (Gemini-in-Gmail style), not a modal -
-   it stays open alongside the editor instead of blocking it. Always in the
-   DOM; the open/closed state is a body class so toggling costs no re-render. */
+/* Quizzy: a rail down the right-hand side, part of the page rather than a
+   layer over it. Writing the quiz is a sit-at-a-monitor job, so the rail is
+   simply where the screen ends: one hairline, no shadow, nothing floating.
+   It hangs under the header, which keeps running edge to edge above it - so
+   the account menu stays where it always is and the page reads as one screen
+   with a column in it. Phones get the slide-over further down. */
 .assist-dock {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: 250;
-  width: min(400px, 100vw);
+  position: fixed; top: var(--nav-h); right: 0; bottom: 0; z-index: 90;
+  width: var(--assist-w, 400px);
   background: var(--surface); border-left: 1px solid var(--line);
-  box-shadow: var(--shadow-lg);
   display: flex; flex-direction: column;
-  transform: translateX(105%);
-  transition: transform .28s var(--ease-out);
-}
-body.assist-open .assist-dock { transform: translateX(0); }
-@media (min-width: 900px) {
-  body.assist-open .app { padding-right: calc(min(400px, 100vw) + 32px); transition: padding-right .28s var(--ease-out); }
 }
 
-.assist-dock-head {
-  display: flex; align-items: center; gap: 10px;
-  padding: 18px 20px; border-bottom: 1px solid var(--line-soft); flex: none;
+/* Only the editor column reserves room, never the header. .app is border-box
+   and capped at 1040px, so the cap grows by the rail's width as well -
+   otherwise the gutter would eat the questions instead of the space beside
+   them, and the column would drift off centre. */
+body.assist-docked .app {
+  max-width: calc(1040px + var(--assist-w, 400px));
+  padding-right: calc(var(--assist-w, 400px) + 40px);
 }
-.assist-dock-head h3 { font-size: 18px; margin: 0; flex: 1; }
 
-.assist-dock-body {
+/* Drag handle: a hairline that only colours in on approach, so at rest the
+   rail reads as an edge rather than a control. */
+.assist-grip {
+  position: absolute; top: 0; bottom: 0; left: -3px; width: 7px;
+  cursor: col-resize; z-index: 1; touch-action: none;
+}
+.assist-grip::after {
+  content: ''; position: absolute; inset: 0 3px;
+  background: var(--accent); opacity: 0; transition: opacity .15s var(--ease);
+}
+.assist-grip:hover::after, .assist-grip:focus-visible::after { opacity: .5; }
+body.assist-resizing .assist-grip::after { opacity: .75; }
+/* Nothing should select or hover-flicker while a drag is in flight. */
+body.assist-resizing { user-select: none; cursor: col-resize; }
+body.assist-resizing .assist-dock-body { pointer-events: none; }
+
+/* Deliberately no border under this: the page header's rule sits directly
+   above the panel, and a second rule a little lower never lines up with it -
+   which reads as a misalignment rather than as structure. The title is a
+   quiet label; the scroll area below carries the weight. */
+.assist-head {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 18px 20px 6px; color: var(--ink-2);
+}
+.assist-mark { display: flex; color: var(--accent); }
+.assist-head h3 {
+  font-size: 13px; font-weight: 600; margin: 0;
+  letter-spacing: -.005em; color: var(--ink-2);
+}
+.assist-close { display: none; }
+
+.assist-body {
   flex: 1; min-height: 0; overflow-y: auto;
-  padding: 18px 20px; display: flex; flex-direction: column; gap: 18px;
+  padding: 14px 20px 20px; display: flex; flex-direction: column; gap: 22px;
 }
-.assist-empty { color: var(--ink-3); font-size: 14px; line-height: 1.55; }
 
-.assist-msg { font-size: 15px; line-height: 1.5; }
+/* Empty state: one line of welcome, then examples worth actually clicking. */
+.assist-welcome p { font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.assist-try {
+  margin-top: 20px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3);
+}
+.assist-examples { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.assist-example {
+  text-align: left; width: 100%; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: transparent; color: var(--ink-2);
+  padding: 9px 12px; font: inherit; font-size: 13px; line-height: 1.45;
+  transition: background .15s var(--ease), color .15s var(--ease);
+}
+.assist-example:hover { background: var(--surface-2); color: var(--ink); }
+
+.assist-msg { font-size: 14px; line-height: 1.6; }
 .assist-role {
-  font-size: 12px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em; color: var(--ink-3); margin-bottom: 4px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--ink-3); margin-bottom: 5px;
 }
 .assist-msg.user .assist-role { color: var(--accent); }
 .assist-text { white-space: pre-wrap; color: var(--ink); }
+.assist-msg.user .assist-text { color: var(--ink-2); }
 
-.assist-quiz-preview {
-  border: 1px solid var(--line); border-radius: 14px;
-  padding: 14px; margin-top: 10px; background: var(--surface-2);
-  font-size: 14px; color: var(--ink-2);
+.assist-card {
+  margin-top: 12px; padding: 14px;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface-2);
 }
+.assist-card-title { font-size: 13px; font-weight: 550; color: var(--ink); }
+.assist-card-sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 
-.assist-dock-foot { border-top: 1px solid var(--line-soft); padding: 14px 16px; flex: none; }
-.assist-dock-foot textarea { resize: none; }
+/* Composer: input and send share one rounded field that lights up on focus,
+   rather than a bare textarea with a button parked underneath it. */
+.assist-foot { flex: none; padding: 14px 16px 16px; border-top: 1px solid var(--line-soft); }
+.assist-field {
+  display: flex; align-items: flex-end; gap: 8px;
+  background: var(--surface-2); border: 1px solid transparent;
+  border-radius: var(--r); padding: 6px 6px 6px 14px;
+  transition: border-color .15s var(--ease), background .15s var(--ease);
+}
+.assist-field:focus-within { background: var(--surface); border-color: var(--accent); }
+.assist-input {
+  flex: 1; min-width: 0; resize: none; border: 0; outline: none;
+  background: transparent; color: var(--ink);
+  font: inherit; font-size: 14px; line-height: 1.5;
+  padding: 7px 0; max-height: 140px;
+}
+.assist-input::placeholder { color: var(--ink-3); }
+.assist-send {
+  flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+  display: grid; place-items: center; cursor: pointer;
+  transition: opacity .15s var(--ease);
+}
+.assist-send:disabled { opacity: .35; cursor: default; }
+.assist-err { color: var(--warn); font-size: 13px; margin-top: 10px; }
+
+/* A phone has no room to keep Quizzy alongside, so there it slides over the
+   editor from a floating button and can be shut again. */
+.assist-fab { display: none; }
+@media (max-width: 899px) {
+  .assist-dock {
+    top: 0; width: min(420px, 100vw); box-shadow: var(--shadow-lg);
+    transform: translateX(105%); transition: transform .28s var(--ease-out);
+  }
+  body.assist-open .assist-dock { transform: translateX(0); }
+  body.assist-docked .app { max-width: 1040px; padding-right: 16px; }
+  .assist-grip { display: none; }
+  .assist-close { display: inline-flex; }
+  .assist-fab {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; right: 16px; bottom: 16px; z-index: 89;
+    width: 52px; height: 52px; border-radius: 50%; border: 0;
+    background: var(--accent); color: var(--accent-ink);
+    box-shadow: var(--shadow-lg); cursor: pointer;
+  }
+  .assist-fab svg { width: 22px; height: 22px; }
+  body.assist-open .assist-fab { display: none; }
+}
 
 /* Toasts */
 

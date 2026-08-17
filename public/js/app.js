@@ -21,6 +21,10 @@
     var nav = document.getElementById('nav');
     var foot = document.querySelector('.foot');
     QC.clear(app);
+    // Only the quiz editor docks the assistant; every other screen, a running
+    // game included, gets its full width back. The editor re-adds these as it
+    // renders, so this has to clear before any of the early returns below.
+    document.body.classList.remove('assist-docked', 'assist-open');
 
     // Not signed in, so show nothing but the sign-in card.
     if (!QC.state || QC.state.anonymous) {
@@ -201,6 +205,11 @@
     }
   });
 
+  /* A remembered panel width can be too wide for a smaller window, so it is
+     re-clamped against the new size rather than written down again. */
+  window.addEventListener('resize', function () { QC.assistWidth.apply(); });
+
   QC.theme.apply();
+  QC.assistWidth.apply();
   QC.boot();
 })();
