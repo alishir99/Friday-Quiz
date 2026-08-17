@@ -50,16 +50,42 @@ DEEPSEEK_API_KEY=sk-...
 Get a key at platform.deepseek.com. `.env` is gitignored, so it never ends up
 committed if you put this under version control later.
 
-## Quiz assistant
+## Putting it on the internet
 
-An *✨ Ask the assistant* panel docks to the right of the quiz editor - only
-the quiz master sees it, same as the editor itself. Ask for one question, a
-handful of ideas, or the whole thing: *"Write the whole quiz about guessing
-animal sounds, keep it funny"* gets back all ten questions, options, correct
-answers and the tiebreaker in one go, with an **Insert into quiz** button
-that fills every field for you. If the quiz already has real work in it,
-inserting asks first - it replaces everything, so there's a chance to back
-out.
+See **[DEPLOY.md](DEPLOY.md)** — push to GitHub, connect the repo, done. Same
+`server.mjs`, free tier, HTTPS included, no ports to open and no server to
+patch. The `Dockerfile` is nine lines and needs no attention.
+
+Two settings only matter once it is publicly reachable:
+
+| Variable | What it does |
+|---|---|
+| `QUIZ_INVITE_CODE` | New accounts must supply it. Existing users never see it. **Set this before the URL is reachable** — sign-up is otherwise open, and on a fresh install whoever signs up first can claim admin. |
+| `QUIZ_DATA_DIR` | Where accounts, history and uploads live. Point it at a mounted volume (`/data` in the `Dockerfile`) or they are wiped on every redeploy. |
+| `QUIZ_BIND` | Only for a plain VM behind a TLS proxy: `127.0.0.1` keeps the HTTP port off the internet. Leave unset in a container. |
+
+The session cookie picks up `Secure` automatically when the request arrives
+over HTTPS (`X-Forwarded-Proto`), so there is nothing to configure there.
+
+## Quizzy, the quiz assistant
+
+**Quizzy** - "your humble servant" - is a rail down the right-hand side of
+the quiz editor. Not a button, not a pop-up: writing the quiz is a
+sit-at-a-monitor job, so the panel is simply part of that screen and the page
+narrows to sit beside it. Drag its left edge to set how much room it gets;
+the width is remembered per browser. Only the quiz master sees it, same as
+the editor itself.
+
+Ask for one question, a handful of ideas, or the whole thing: *"Write the
+whole quiz about guessing animal sounds, keep it funny"* gets back all ten
+questions, options, correct answers and the tiebreaker in one go, with an
+**Insert into quiz** button that fills every field for you. The empty panel
+offers a few of these as one-click starters. If the quiz already has real
+work in it, inserting asks first - it replaces everything, so there's a
+chance to back out.
+
+On a phone there is no room for a rail, so Quizzy slides in from a floating
+button instead.
 
 Be clear-eyed about what this is: it's DeepSeek's own knowledge, not a live
 web search, so there's no source link to check a fact against - it's told to
@@ -159,17 +185,25 @@ Every one of these is also a button on screen.
 ## Files
 
 ```
-index.html      markup and script tags
-styles.css      the whole visual language
-js/qrcode.js    vendored QR encoder (MIT, kazuhikoarase/qrcode-generator)
-js/store.js     shared helpers, the all-time table
-js/ui.js        DOM helpers, dialogs, toasts
-js/net.js       accounts, actions, the live feed
-js/screens.js   sign in, home, team, editor, history, rules
-js/live.js      the running quiz: big screen and phone
-js/app.js       boot, routing, keyboard
-server.mjs      accounts, game state, scoring, real-time push, quiz assistant
+server.mjs             accounts, game state, scoring, real-time push, quiz assistant
+.env                   secrets (gitignored) - see Running it
+public/                everything served to a browser, and nothing else
+  index.html           markup and script tags
+  styles.css           the whole visual language
+  js/qrcode.js         vendored QR encoder (MIT, kazuhikoarase/qrcode-generator)
+  js/store.js          shared helpers, the all-time table
+  js/ui.js             DOM helpers, dialogs, toasts
+  js/net.js            accounts, actions, the live feed
+  js/screens.js        sign in, home, team, editor, history, rules
+  js/live.js           the running quiz: big screen and phone
+  js/app.js            boot, routing, keyboard
+data/                  accounts, history, uploaded media (gitignored)
+deploy/                systemd unit + Caddyfile, see DEPLOY.md
 ```
+
+Static files are served **only** from `public/`. That is deliberate: serving
+the project root would hand out `.env`, `server.mjs` and `data/` to anyone who
+asked for them by name.
 
 ## Notes
 

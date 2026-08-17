@@ -1,0 +1,12 @@
+# Secrets are set in the host's dashboard, never baked into the image.
+.env
+
+# Local state - the deployed app uses a mounted volume instead.
+data/
+*.log
+
+.git/
+.gitignore
+.claude/
+node_modules/
+Screenshot*.png

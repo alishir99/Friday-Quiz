@@ -1,0 +1,34 @@
+# Caddy config for Friday Quiz.
+#
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Replace quiz.example.com with your domain. Caddy gets and renews the HTTPS
+# certificate on its own - there is nothing to configure and nothing to renew.
+
+quiz.example.com {
+	# X-Forwarded-Proto is set automatically, which is how the app knows to add
+	# Secure to the session cookie.
+	reverse_proxy 127.0.0.1:8080 {
+		# The quiz uses server-sent events; without this Caddy would buffer them
+		# and the big screen would lag behind the phones.
+		flush_interval -1
+	}
+
+	encode gzip
+
+	# Uploaded media can be up to 48 MB.
+	request_body {
+		max_size 64MB
+	}
+}
+
+# No domain? Delete the block above and use this instead. Caddy will serve over
+# plain HTTP on the VM's public IP - fine for a first test, but the session
+# cookie will not be marked Secure and traffic is not encrypted.
+#
+# :80 {
+# 	reverse_proxy 127.0.0.1:8080 {
+# 		flush_interval -1
+# 	}
+# }
