@@ -22,10 +22,16 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 // keeps working as documented without anyone having to export anything first.
 try { process.loadEnvFile(join(ROOT, '.env')); } catch {}
 
+const PUBLIC_DIR = join(ROOT, 'public');
 const DATA_DIR = process.env.QUIZ_DATA_DIR || join(ROOT, 'data');
 const DATA_FILE = join(DATA_DIR, 'friday-quiz.json');
 const MEDIA_DIR = join(DATA_DIR, 'media');
 const PORT = Number(process.argv[2] || process.env.PORT || 8080);
+/* Behind a TLS proxy, bind to loopback so the plain-HTTP port is not reachable
+   from the internet. Unset (the default) keeps the LAN behaviour for phones. */
+const BIND = process.env.QUIZ_BIND || '0.0.0.0';
+// Set on a public deployment; leave empty on a trusted LAN to keep sign-up open.
+const INVITE_CODE = String(process.env.QUIZ_INVITE_CODE || '').trim();
 const MAX_BODY = 4 * 1024 * 1024;
 const MAX_MEDIA = 48 * 1024 * 1024;
 const QUESTION_COUNT = 10;     // how many a fresh quiz starts with
@@ -122,7 +128,7 @@ const MIN_PASSWORD = 4;
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
 const MAX_ASSIST_MESSAGE = 2000;
 const MAX_ASSIST_HISTORY = 20;
-const ASSIST_SYSTEM = `You help the quiz master write questions for a weekly pub-style trivia quiz.
+const ASSIST_SYSTEM = `You are Quizzy, the quiz master's humble servant: a cheerful, slightly theatrical butler who helps write questions for a weekly pub-style trivia quiz. Keep that voice light - a wry aside is welcome, a paragraph of it is not.
 
 For a quick question or an idea, just reply in plain, friendly text.
 
@@ -543,10 +549,17 @@ function cookieToken(req) {
 }
 const whoami = (req) => tokens.get(cookieToken(req)) || null;
 
-function setTokenCookie(userId) {
+/* Behind a TLS proxy the app itself still speaks plain HTTP, so the header is
+   the only way to know the browser is on HTTPS. Spoofing it only adds Secure
+   to the attacker's own cookie, so it does not need to be trusted carefully. */
+const isHttps = (req) =>
+  String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+
+function setTokenCookie(userId, secure) {
   const token = randomBytes(24).toString('hex');
   tokens.set(token, userId);
-  return `fq_token=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 180}`;
+  return `fq_token=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 180}`
+    + (secure ? '; Secure' : '');
 }
 
 /* Make sure there is always something for the next Friday. */
@@ -578,13 +591,25 @@ async function api(req, res, path) {
      it reset by the admin from the team page (see /api/reset-password) rather
      than through an email flow - nothing beyond a name is collected here. */
   if (path === '/api/login' && req.method === 'POST') {
-    const { name, password } = await readBody(req);
+    const { name, password, invite } = await readBody(req);
     const clean = String(name || '').trim().slice(0, MAX_NAME);
     const pass = String(password || '');
     if (!clean) return json(res, 400, { error: 'Enter your name' });
     if (pass.length < MIN_PASSWORD) return json(res, 400, { error: `Password must be at least ${MIN_PASSWORD} characters` });
     let user = db.users.find((u) => u.name.toLowerCase() === clean.toLowerCase());
     if (!user) {
+      /* On a public URL an open sign-up is the whole perimeter: anyone who
+         finds the address could make an account and, if nobody has claimed it
+         yet, take admin. Signing in to an existing account never needs the
+         code, so the team only sees this once. */
+      if (INVITE_CODE && String(invite || '').trim() !== INVITE_CODE) {
+        return json(res, 403, {
+          error: String(invite || '').trim()
+            ? 'That invite code is not right.'
+            : 'New here? You need the invite code from whoever runs the quiz.',
+          needInvite: true
+        });
+      }
       const { salt, hash } = hashPassword(pass);
       user = { id: uid(), name: clean, active: true, joinedAt: new Date().toISOString(), salt, hash };
       db.users.push(user);
@@ -600,7 +625,8 @@ async function api(req, res, path) {
       // has never seen this account's password - the message covers both.
       return json(res, 401, { error: 'Wrong password for "' + user.name + '". If that is not you, sign in with a different name (e.g. add a last initial).' });
     }
-    return json(res, 200, { ok: true, me: user.id }, { 'set-cookie': setTokenCookie(user.id) });
+    return json(res, 200, { ok: true, me: user.id },
+      { 'set-cookie': setTokenCookie(user.id, isHttps(req)) });
   }
 
   if (path === '/api/logout' && req.method === 'POST') {
@@ -945,9 +971,12 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  /* Static files come only from public/, never from the project root. Serving
+     the root would hand out .env, server.mjs and data/ to anyone who asked for
+     them by name - the API key included. */
   const rel = path === '/' ? '/index.html' : path;
-  const file = join(ROOT, normalize(rel).replace(/^(\.\.[/\\])+/, ''));
-  if (!file.startsWith(ROOT) || !existsSync(file)) return send(res, 404, 'Not found');
+  const file = join(PUBLIC_DIR, normalize(rel).replace(/^(\.\.[/\\])+/, ''));
+  if (!file.startsWith(PUBLIC_DIR) || !existsSync(file)) return send(res, 404, 'Not found');
 
   try {
     const buf = await readFile(file);
@@ -958,12 +987,13 @@ const server = createServer(async (req, res) => {
 });
 
 await loadDb();
-server.listen(PORT, () => {
+server.listen(PORT, BIND, () => {
   const lan = Object.values(networkInterfaces()).flat()
     .filter((n) => n && n.family === 'IPv4' && !n.internal).map((n) => n.address);
   console.log('\n  Friday Quiz is running.\n');
   console.log('    Big screen:   http://localhost:' + PORT);
-  lan.forEach((ip) => console.log('    Phones:       http://' + ip + ':' + PORT));
-  console.log('\n    Data: ' + DATA_FILE);
+  if (BIND === '0.0.0.0') lan.forEach((ip) => console.log('    Phones:       http://' + ip + ':' + PORT));
+  console.log('\n    Data:   ' + DATA_FILE);
+  console.log('    Signup: ' + (INVITE_CODE ? 'invite code required' : 'open (no invite code set)'));
   console.log('    Stop with Ctrl+C\n');
 });
