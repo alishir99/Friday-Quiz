@@ -42,6 +42,7 @@ if [ -d "$APP/.git" ]; then
 else
   git clone -q "$REPO" "$APP"
 fi
+mkdir -p "$APP/data"
 chown -R quiz:quiz "$APP"
 
 echo "==> Secrets"

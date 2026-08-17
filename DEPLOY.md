@@ -186,6 +186,7 @@ a non-empty directory.
 ```bash
 sudo useradd --system --home-dir /opt/friday-quiz --shell /usr/sbin/nologin quiz
 sudo git clone https://github.com/alishir99/Friday-Quiz.git /opt/friday-quiz
+sudo mkdir -p /opt/friday-quiz/data
 sudo chown -R quiz:quiz /opt/friday-quiz
 ```
 
@@ -232,6 +233,71 @@ cd /opt/friday-quiz && sudo -u quiz git pull && sudo systemctl restart friday-qu
 journalctl -u friday-quiz -f          # logs
 sudo tar czf ~/quiz-$(date +%F).tgz -C /opt/friday-quiz data   # backup
 ```
+
+---
+
+## Reconnecting to the VM later
+
+### One-time setup: an SSH config alias
+
+Add this to `~/.ssh/config` (create the file if it doesn't exist) so you can
+just type `ssh your.vm.ip.here` instead of remembering the user and key path:
+
+```
+Host your.vm.ip.here
+  HostName your.vm.ip.here
+  User ubuntu
+  IdentityFile ~/.ssh/oracle-quiz-vm.key
+```
+
+Put the private key Oracle gave you at instance-creation time at that path
+(it downloads as something like `ssh-key-2026-08-17.key` — move it into
+`~/.ssh/`). On Windows, OpenSSH refuses to use a key that other local users
+can read, so lock it down after moving it:
+
+```powershell
+icacls "$env:USERPROFILE\.ssh\oracle-quiz-vm.key" /inheritance:r
+icacls "$env:USERPROFILE\.ssh\oracle-quiz-vm.key" /grant:r "$env:USERNAME:R"
+```
+
+### From a terminal
+
+```bash
+ssh your.vm.ip.here
+```
+
+### From VS Code
+
+1. Install the **Remote - SSH** extension (Microsoft).
+2. `Ctrl+Shift+P` → **Remote-SSH: Connect to Host** → pick `your.vm.ip.here`
+   (it reads the same `~/.ssh/config` alias above).
+3. `File → Open Folder` → `/opt/friday-quiz` to browse/edit the app directly;
+   use the integrated terminal for `systemctl`, `journalctl`, editing `.env`.
+
+**On the `VM.Standard.E2.1.Micro` shape (1 GB RAM, no swap by default):**
+VS Code's remote server (`vscode-server`) that gets installed on the VM to
+support Remote-SSH can itself use 200–400 MB. Alongside Node and Caddy,
+that's enough to push the box into OOM territory with no swap to absorb it —
+symptoms are SSH hanging or timing out entirely, even though the instance
+shows "Running" in the Oracle console. Set up the swapfile mentioned below
+before doing extended VS Code sessions on this box, and close the Remote-SSH
+window fully (not just disconnect) when you're done, so `vscode-server` on
+the VM actually exits.
+
+```bash
+# one-time: give the box a swap cushion
+sudo fallocate -l 1G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+### If SSH won't connect at all
+
+If the instance shows **Running** in the Oracle console but SSH times out
+during the banner exchange (not "connection refused" — that's a different,
+network-level problem), the box is likely up but unresponsive under memory
+pressure. Reboot it from the console: **Compute → Instances → your
+instance → Reboot** (not Stop/Start). Nothing is lost — the app holds no
+state outside `/opt/friday-quiz/data`, which is on disk, not memory.
 
 ---
 
