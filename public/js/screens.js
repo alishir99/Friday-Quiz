@@ -1149,7 +1149,7 @@
     }
 
     function detail(h, rank) {
-      var qCount = h.quiz ? h.quiz.questions.length : QC.QUESTION_COUNT;
+      var qCount = h.questionCount || QC.QUESTION_COUNT;
       return el('div', [
         el('div.board', { style: { marginTop: '20px' } }, rank.map(function (r, i) {
           return el('div.board-row' + (i === 0 ? '.p1' : (i === rank.length - 1 ? '.last' : '')), [
@@ -1165,13 +1165,18 @@
             ])
           ]);
         })),
-        h.quiz ? el('button.btn.ghost.sm', { type: 'button', text: 'Show the questions and answers',
-          style: { marginTop: '18px' }, onclick: function () { showQuiz(h); } }) : null
+        el('button.btn.ghost.sm', { type: 'button', text: 'Show the questions and answers',
+          style: { marginTop: '18px' }, onclick: function (e) {
+            // Fetched on demand rather than shipped with every push.
+            e.target.disabled = true;
+            QC.net.pastQuiz(h.id)
+              .then(function (r) { e.target.disabled = false; showQuiz(h, r.quiz); })
+              .catch(function (err) { e.target.disabled = false; QC.toast(err.message); });
+          } })
       ]);
     }
 
-    function showQuiz(h) {
-      var q = h.quiz;
+    function showQuiz(h, q) {
       QC.sheet({
         title: h.topic,
         sub: QC.fmtDate(h.date, { day: 'numeric', month: 'long', year: 'numeric' }),

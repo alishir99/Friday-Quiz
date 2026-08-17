@@ -430,7 +430,15 @@ function stateFor(userId) {
   const online = onlineIds();
   const out = {
     users: db.users.map((u) => ({ id: u.id, name: u.name, active: u.active, online: online.has(u.id) })),
-    history: db.history,
+    /* Every past quiz's questions used to ride along here - and this whole
+       object is rebuilt and pushed to every connected phone on every answer.
+       After a year that was a megabyte per player per keystroke. The list and
+       the all-time table only need the rankings; the questions are fetched
+       from /api/history/<id>/quiz when someone actually opens one. */
+    history: db.history.map(({ quiz, ...rest }) => ({
+      ...rest,
+      questionCount: quiz && quiz.questions ? quiz.questions.length : QUESTION_COUNT
+    })),
     adminId: db.adminId,
     rules: db.rules,
     upcoming: db.upcoming ? {
@@ -694,6 +702,16 @@ async function api(req, res, path) {
     db.rules = String(text || '').slice(0, MAX_RULES);
     await persist(); broadcast();
     return json(res, 200, { ok: true });
+  }
+
+  /* One past quiz's questions and answers, fetched only when someone opens
+     it. Safe to hand over: the game is long finished. */
+  const pastQuiz = path.match(/^\/api\/history\/([a-f0-9]+)\/quiz$/);
+  if (pastQuiz && req.method === 'GET') {
+    if (!requireUser()) return;
+    const session = db.history.find((h) => h.id === pastQuiz[1]);
+    if (!session || !session.quiz) return json(res, 404, { error: 'No such quiz' });
+    return json(res, 200, { ok: true, quiz: session.quiz });
   }
 
   if (path === '/api/state' && req.method === 'GET') {

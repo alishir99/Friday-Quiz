@@ -77,6 +77,8 @@
     return String(n || '').replace(/[^\x20-\x7E]/g, '');
   }
 
+  Net.pastQuiz = function (id) { return Net.call('api/history/' + id + '/quiz'); };
+
   Net.assist = function (messages, topic) { return Net.call('api/assist', 'POST', { messages: messages, topic: topic }); };
 
   Net.setTopic   = function (topic) { return Net.call('api/topic', 'POST', { topic: topic }); };
