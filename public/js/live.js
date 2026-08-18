@@ -358,7 +358,7 @@
       el('div.s-kicker', { text: 'Next Friday' }),
       el('h1.s-title', { style: { fontSize: 'clamp(34px,4.6vw,68px)' }, text: 'Over to you two' }),
       el('div.next-grid', [
-        roleCard('Quiz master', roles.quizMasterId, 'Finished last, so you write next week’s quiz'),
+        roleCard('Quiz maker', roles.quizMasterId, 'Finished last, so you write next week’s quiz'),
         roleCard('Topic picker', roles.topicPickerId, 'Second from last, so you choose the subject')
       ]),
       L.committed
@@ -653,7 +653,7 @@
       el('div.stack', { style: { marginTop: '20px', gap: '12px' } }, [
         el('div.role-card', [
           av(QC.name(roles.quizMasterId), 'lg'),
-          el('div.who', [el('div.lbl', { text: 'Quiz master' }), el('div.val', { text: QC.name(roles.quizMasterId) })])
+          el('div.who', [el('div.lbl', { text: 'Quiz maker' }), el('div.val', { text: QC.name(roles.quizMasterId) })])
         ]),
         el('div.role-card', [
           av(QC.name(roles.topicPickerId), 'lg'),

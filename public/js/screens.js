@@ -168,11 +168,19 @@
         }) : null,
         el('p.when', { text: QC.fmtDate(u.date) }),
         el('div.grid-2', { style: { marginTop: '32px' } }, [
-          roleCard('Quiz master', u.quizMasterId, u.reason && u.reason.master, master),
+          roleCard('Quiz maker', u.quizMasterId, u.reason && u.reason.master, master),
           roleCard('Topic picker', u.topicPickerId, u.reason && u.reason.picker, picker)
         ]),
-        action ? el('div.row', { style: { marginTop: '32px' } },
-          [action, (status === 'ready' && master) ? revealSwitch() : null]) : null,
+        /* The action for whoever is looking, and off to the right the admin's
+           override. Same line because they are the two things you might do to
+           this week, not a footnote at the bottom of the page. */
+        (action || QC.isAdmin()) ? el('div.row', { style: { marginTop: '32px' } }, [
+          action,
+          (status === 'ready' && master) ? revealSwitch() : null,
+          el('div.spacer'),
+          QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button',
+            text: 'Change who does what', onclick: overrideRoles }) : null
+        ]) : null,
         note ? el('p.muted', { style: { marginTop: action ? '14px' : '28px', fontSize: '16px' }, text: note }) : null
       ]),
 
@@ -204,11 +212,7 @@
           s.history.length ? miniBoard() : el('p.muted', { style: { marginTop: '14px' },
             text: 'Nothing played yet. The table fills in after your first Friday.' })
         ])
-      ]),
-
-      QC.isAdmin() ? el('div.row', [
-        el('button.btn.quiet.sm', { type: 'button', text: 'Change who does what', onclick: overrideRoles })
-      ]) : null
+      ])
     ]);
 
     function roleCard(label, id, why, isMe) {
@@ -332,8 +336,8 @@
               : 'Not played yet' })
           ]),
           el('div.spacer'),
-          s.adminId === u.id ? el('span.pill', { text: 'Admin' }) : null,
-          s.upcoming && s.upcoming.quizMasterId === u.id ? el('span.pill', { text: 'Quiz master' }) : null,
+          s.adminId === u.id ? el('span.pill', { text: 'Admin / Quiz master' }) : null,
+          s.upcoming && s.upcoming.quizMasterId === u.id ? el('span.pill', { text: 'Quiz maker' }) : null,
           s.upcoming && s.upcoming.topicPickerId === u.id ? el('span.pill', { text: 'Topic picker' }) : null,
           QC.isAdmin() && u.id !== s.me ? el('button.btn.quiet.sm', { type: 'button', text: 'Reset password',
             onclick: function () { resetPassword(u); } }) : null,
@@ -437,7 +441,7 @@
     function adminCard() {
       if (s.adminId) {
         return el('div.card.flat', { style: { marginTop: '10px' } }, [
-          el('div.kicker', { text: 'Admin' }),
+          el('div.kicker', { text: 'Admin / Quiz master' }),
           el('div.row', { style: { marginTop: '10px', alignItems: 'center' } }, [
             av(QC.name(s.adminId)),
             el('div', { style: { marginLeft: '12px' } },
@@ -449,7 +453,7 @@
         ]);
       }
       return el('div.card.flat', { style: { marginTop: '10px' } }, [
-        el('div.kicker', { text: 'Admin' }),
+        el('div.kicker', { text: 'Admin / Quiz master' }),
         el('p.muted', { style: { marginTop: '8px' } },
           'Nobody is admin yet. The admin resets forgotten passwords and edits the Rules page.'),
         el('button.btn.sm', { type: 'button', text: 'Become admin', style: { marginTop: '10px' },
@@ -554,7 +558,7 @@
     if (!QC.isMaster()) {
       return el('div.empty', { style: { marginTop: '40px' } }, [
         el('div', { style: { fontSize: '46px', marginBottom: '12px' } }, '🔒'),
-        el('div.big', { text: 'Only the quiz master can write this quiz' }),
+        el('div.big', { text: 'Only the quiz maker can write this quiz' }),
         el('p', { style: { marginTop: '8px' } }, QC.name(u.quizMasterId) + ' is writing it this week.'),
         el('div.row', { style: { justifyContent: 'center', marginTop: '22px' } },
           [el('a.btn.ghost', { href: '#/', 'data-nav': '', text: 'Back' })])
@@ -610,7 +614,7 @@
       QC.append(headEl, [
         el('div.row', [
           el('div', [
-            el('div.kicker', { text: 'Quiz master · ' + QC.fmtDate(u.date, { day: 'numeric', month: 'short' }) }),
+            el('div.kicker', { text: 'Quiz maker · ' + QC.fmtDate(u.date, { day: 'numeric', month: 'short' }) }),
             el('h1', { style: { fontSize: '38px', marginTop: '6px' }, text: quiz.topic || u.topic })
           ]),
           el('div.spacer'),

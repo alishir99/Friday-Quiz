@@ -1017,7 +1017,7 @@ async function api(req, res, path) {
 
   if (path === '/api/quiz' && req.method === 'PUT') {
     if (!requireUser()) return;
-    if (!isMaster()) return json(res, 403, { error: 'Only the quiz master can write the quiz' });
+    if (!isMaster()) return json(res, 403, { error: 'Only the quiz maker can write the quiz' });
     const { quiz } = await readBody(req);
     if (!quiz || !Array.isArray(quiz.questions)) return json(res, 400, { error: 'Bad quiz' });
     quiz.questions = quiz.questions.slice(0, MAX_QUESTIONS).map((q) => {
@@ -1041,7 +1041,7 @@ async function api(req, res, path) {
      which avoids hand-rolling a multipart parser for no benefit. */
   if (path === '/api/media' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isMaster()) return json(res, 403, { error: 'Only the quiz master can add media' });
+    if (!isMaster()) return json(res, 403, { error: 'Only the quiz maker can add media' });
 
     const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
     const type = MEDIA_TYPES[mime];
@@ -1068,7 +1068,7 @@ async function api(req, res, path) {
      before the game. */
   if (path === '/api/assist' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isMaster()) return json(res, 403, { error: 'Only this week’s quiz master can use the assistant' });
+    if (!isMaster()) return json(res, 403, { error: 'Only this week’s quiz maker can use the assistant' });
     const { messages, topic } = await readBody(req);
     if (!Array.isArray(messages) || !messages.length) return json(res, 400, { error: 'No message' });
     const history = messages.slice(-MAX_ASSIST_HISTORY).map((m) => ({
@@ -1092,7 +1092,7 @@ async function api(req, res, path) {
     if (!db.upcoming) return json(res, 400, { error: 'Nothing scheduled' });
     if (quizMasterId && !userById(quizMasterId)) return json(res, 400, { error: 'No such person' });
     if (topicPickerId && !userById(topicPickerId)) return json(res, 400, { error: 'No such person' });
-    if (quizMasterId && isGuest(quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz master' });
+    if (quizMasterId && isGuest(quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz maker' });
     if (topicPickerId && isGuest(topicPickerId)) return json(res, 400, { error: 'A guest cannot pick the topic' });
     if (quizMasterId && isRemoved(quizMasterId)) return json(res, 400, { error: 'That person has been removed' });
     if (topicPickerId && isRemoved(topicPickerId)) return json(res, 400, { error: 'That person has been removed' });
@@ -1107,7 +1107,7 @@ async function api(req, res, path) {
 
   if (path === '/api/live/start' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isMaster()) return json(res, 403, { error: 'Only the quiz master can start it' });
+    if (!isMaster()) return json(res, 403, { error: 'Only the quiz maker can start it' });
     if (!quizReady(db.upcoming.quiz)) return json(res, 400, { error: 'The quiz is not finished yet' });
     db.live = {
       id: uid(), phase: 'lobby', index: 0,
@@ -1131,7 +1131,7 @@ async function api(req, res, path) {
      one suits only becomes obvious once the room is in front of you. */
   if (path === '/api/live/reveal' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isMaster()) return json(res, 403, { error: 'Only the quiz master decides this' });
+    if (!isMaster()) return json(res, 403, { error: 'Only the quiz maker decides this' });
     const { mode } = await readBody(req);
     if (!REVEAL_MODES.includes(mode)) return json(res, 400, { error: 'Unknown mode' });
     db.revealMode = mode;
@@ -1148,7 +1148,7 @@ async function api(req, res, path) {
 
   if ((path === '/api/live/advance' || path === '/api/live/back') && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!runsLive()) return json(res, 403, { error: 'Only the quiz master controls the slides' });
+    if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker controls the slides' });
     if (!db.live) return json(res, 400, { error: 'Nothing running' });
     (path.endsWith('advance') ? advance : back)(db.live, liveQuestionCount(db.live));
     broadcast();
@@ -1191,14 +1191,14 @@ async function api(req, res, path) {
 
   if (path === '/api/live/roles' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!runsLive()) return json(res, 403, { error: 'Only the quiz master can change this' });
+    if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker can change this' });
     const { quizMasterId, topicPickerId } = await readBody(req);
     if (!db.live) return json(res, 400, { error: 'Nothing running' });
-    if (quizMasterId && isGuest(quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz master' });
+    if (quizMasterId && isGuest(quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz maker' });
     if (topicPickerId && isGuest(topicPickerId)) return json(res, 400, { error: 'A guest cannot pick the topic' });
     db.live.roleOverride = {
       quizMasterId, topicPickerId,
-      reason: { master: 'Chosen by the quiz master', picker: 'Chosen by the quiz master' }
+      reason: { master: 'Chosen by the quiz maker', picker: 'Chosen by the quiz maker' }
     };
     broadcast();
     return json(res, 200, { ok: true });
@@ -1206,7 +1206,7 @@ async function api(req, res, path) {
 
   if (path === '/api/live/finish' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!runsLive()) return json(res, 403, { error: 'Only the quiz master can finish it' });
+    if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker can finish it' });
     const live = db.live;
     if (!live) return json(res, 400, { error: 'Nothing running' });
     if (live.committed) return json(res, 200, { ok: true });
@@ -1257,7 +1257,7 @@ async function api(req, res, path) {
 
   if (path === '/api/live/stop' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!runsLive()) return json(res, 403, { error: 'Only the quiz master can stop it' });
+    if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker can stop it' });
     db.live = null;
     broadcast();
     return json(res, 200, { ok: true });
