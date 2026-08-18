@@ -1009,6 +1009,33 @@ body.playing .app { padding: 0; max-width: none; }
   font-size: clamp(14px, min(1.3vw, 1.95vh), 19px); color: var(--ink-2);
   font-family: ui-monospace, monospace; font-weight: 600;
 }
+/* Read off a projector and typed on a phone, so it gets room to breathe and
+   wide letter-spacing - the two things that make a code easy to copy. */
+.lobby-code {
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-soft);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  align-self: stretch;
+}
+.lobby-code .lbl {
+  font-size: clamp(11px, min(.95vw, 1.4vh), 15px); font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3);
+}
+.lobby-code .val {
+  font-size: clamp(22px, min(2.1vw, 3.15vh), 34px); font-weight: 700;
+  letter-spacing: .14em; font-family: ui-monospace, monospace;
+}
+
+/* Same code on the Team page, where it gets copied rather than read out. */
+.invite-box {
+  padding: 14px 16px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+}
+.invite-code {
+  margin-top: 4px; font-family: ui-monospace, monospace;
+  font-size: 26px; font-weight: 700; letter-spacing: .12em;
+  cursor: pointer; word-break: break-all;
+}
+.invite-code:hover { color: var(--accent); }
 
 .lobby-players {
   flex: 1; min-width: 260px;

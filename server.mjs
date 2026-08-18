@@ -83,6 +83,7 @@ const EMPTY = () => ({
   upcoming: null,     // { id, date, quizMasterId, topicPickerId, reason, topic, quiz }
   live: null,         // running game
   adminId: null,      // fixed person, not weekly-rotating; null until someone claims it
+  inviteCode: '',     // what new accounts must quote; the admin can change it in the app
   revealMode: 'end',  // 'end' or 'each'; what the next game starts with
   rules: ''           // free text, editable by the admin only
 });
@@ -97,6 +98,13 @@ async function loadDb() {
     db.live = null;              // never resume a half-finished game across a restart
   } catch {
     db = EMPTY();
+  }
+  /* The code used to live only in the environment. Adopt it once so an install
+     that was relying on QUIZ_INVITE_CODE keeps exactly the code it had -
+     without this, upgrading would quietly throw sign-up open. */
+  if (!db.inviteCode && INVITE_CODE) {
+    db.inviteCode = INVITE_CODE;
+    await persist();
   }
 }
 
@@ -126,6 +134,21 @@ const isRemoved = (id) => { const u = userById(id); return !!u && u.active === f
 const activeUsers = () => db.users.filter((u) => u.active !== false);
 // Names and the invite code are matched loosely; passwords never are.
 const sameCode = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+/* The code in force. Stored in the database so the admin can change it from
+   the app; the environment variable is only the starting value. */
+const inviteCode = () => String(db.inviteCode || INVITE_CODE || '').trim();
+
+/* No O/0 or I/1/l - this gets read off a screen across a room and typed on a
+   phone, and those are the pairs people get wrong. 31^6 is around 900 million,
+   which is a different league from a six-digit PIN. */
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function makeCode(len = 6) {
+  const bytes = randomBytes(len);
+  let out = '';
+  for (let i = 0; i < len; i++) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  return out;
+}
 const MAX_NAME = 40;
 const MAX_RULES = 20000;
 const MIN_PASSWORD = 4;
@@ -562,6 +585,10 @@ function stateFor(userId) {
       questionCount: quiz && quiz.questions ? quiz.questions.length : QUESTION_COUNT
     })),
     adminId: db.adminId,
+    /* Members can read it, so anyone on the team can invite someone. Guests
+       cannot: the code is what turns a one-night nickname into a permanent
+       account, and handing it to them would defeat the point of having it. */
+    inviteCode: isGuest(userId) ? null : (inviteCode() || ''),
     rules: db.rules,
     // What the next game will do, set from the dashboard before kick-off.
     revealMode: REVEAL_MODES.includes(db.revealMode) ? db.revealMode : 'end',
@@ -756,7 +783,7 @@ async function api(req, res, path) {
          word of mouth, so it arrives capitalised however the person who typed
          it felt at the time - and it is a gate against strangers, not a
          password. Passwords stay exactly as typed. */
-      if (INVITE_CODE && !sameCode(invite, INVITE_CODE)) {
+      if (inviteCode() && !sameCode(invite, inviteCode())) {
         return json(res, 403, {
           error: String(invite || '').trim()
             ? 'That invite code is not right.'
@@ -861,6 +888,24 @@ async function api(req, res, path) {
     db.adminId = me;
     await persist(); broadcast();
     return json(res, 200, { ok: true });
+  }
+
+  /* The invite code, changeable without a trip to the server. Send a code to
+     set your own, or nothing to have one made up. */
+  if (path === '/api/invite' && req.method === 'POST') {
+    if (!requireUser()) return;
+    if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can change this' });
+    const { code } = await readBody(req);
+    const wanted = String(code == null ? '' : code).trim().slice(0, 80);
+    if (code !== undefined && code !== null && !wanted) {
+      // An explicit empty string means "let anyone sign up", which is a real
+      // choice on a trusted network but worth being deliberate about.
+      db.inviteCode = '';
+    } else {
+      db.inviteCode = wanted || makeCode();
+    }
+    await persist(); broadcast();
+    return json(res, 200, { ok: true, inviteCode: db.inviteCode });
   }
 
   /* Removing someone. A flag rather than a delete: every past quiz they played
@@ -1281,6 +1326,8 @@ server.listen(PORT, BIND, () => {
   console.log('    Big screen:   http://localhost:' + PORT);
   if (BIND === '0.0.0.0') lan.forEach((ip) => console.log('    Phones:       http://' + ip + ':' + PORT));
   console.log('\n    Data:   ' + DATA_FILE);
-  console.log('    Signup: ' + (INVITE_CODE ? 'invite code required' : 'open (no invite code set)'));
+  console.log('    Signup: ' + (inviteCode()
+    ? 'invite code ' + inviteCode() + '  (change it on the Team page)'
+    : 'open (no invite code set)'));
   console.log('    Stop with Ctrl+C\n');
 });

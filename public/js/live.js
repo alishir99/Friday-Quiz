@@ -229,7 +229,13 @@
           el('div.lobby-join-label', { text: 'Scan to join from your phone' }),
           // Spelled out for anyone whose camera will not co-operate.
           el('div.lobby-join-or', { text: 'or open this address' }),
-          el('div.lobby-join-url', { text: location.host })
+          el('div.lobby-join-url', { text: location.host }),
+          /* Only first-timers are asked for it, but they are exactly who is
+             squinting at this screen. */
+          s.inviteCode ? el('div.lobby-code', [
+            el('span.lbl', { text: 'Invite code' }),
+            el('span.val', { text: s.inviteCode })
+          ]) : null
         ]),
         el('div.lobby-players', [
           el('div.lobby-players-count', {

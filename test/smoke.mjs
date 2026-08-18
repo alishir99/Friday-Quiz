@@ -534,6 +534,37 @@ test('removing cannot leave a job with nobody holding it', async () => {
   assert.equal(notAdmin.status, 403, 'and only the admin may do any of it');
 });
 
+/* The code moved out of the environment and into the database so the admin can
+   change it without a trip to the server. */
+test('the admin can change the invite code from the app', async () => {
+  const seen = await stateAs('ali');
+  assert.equal(seen.inviteCode, INVITE, 'members can read it, so anyone can invite');
+
+  const guestView = await stateAs('cal');
+  assert.equal(guestView.inviteCode, null,
+    'a guest cannot - it is what would turn them into a permanent account');
+
+  const mine = await call('/api/invite', { method: 'POST', body: { code: 'Pickled Onion' }, as: 'ali' });
+  assert.equal(mine.status, 200);
+  assert.equal(mine.body.inviteCode, 'Pickled Onion');
+
+  // The new one works, in any case, and the old one does not.
+  assert.equal((await signIn('Codey', 'secret1', 'pickled onion', 'codey')).status, 200);
+  const stale = await signIn('Stale', 'secret1', INVITE);
+  assert.equal(stale.status, 403, 'the previous code stops working at once');
+
+  const made = await call('/api/invite', { method: 'POST', as: 'ali' });
+  assert.equal(made.status, 200);
+  assert.match(made.body.inviteCode, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/,
+    'generated codes avoid the characters people misread');
+
+  const notAdmin = await call('/api/invite', { method: 'POST', body: { code: 'nope' }, as: 'bea' });
+  assert.equal(notAdmin.status, 403);
+
+  // Put it back so the tests after this one still know the code.
+  await call('/api/invite', { method: 'POST', body: { code: INVITE }, as: 'ali' });
+});
+
 /* A name is a name however it is capitalised, and the invite code gets passed
    round by word of mouth so it arrives however the sender felt. A password is
    not in that category and must stay exactly as typed. */

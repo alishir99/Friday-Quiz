@@ -371,12 +371,68 @@
 
       el('div.card.flat', { style: { marginTop: '10px' } }, [
         el('div.kicker', { text: 'Adding someone' }),
-        el('p.muted', { style: { marginTop: '8px' } },
-          'Send them this link, or have them scan the code, and they make their own account.'),
+        el('p.muted', { style: { marginTop: '8px' } }, s.inviteCode
+          ? 'Send them this link, or have them scan the code. They will need the invite code the first time.'
+          : 'Send them this link, or have them scan the code, and they make their own account.'),
         el('p', { style: { marginTop: '10px', fontFamily: 'monospace', fontSize: '15px' }, text: location.origin }),
+        inviteBlock(),
         el('div', { style: { marginTop: '14px' } }, [QC.qrSvg(location.origin, 4)])
       ])
     ]);
+
+    /* The invite code, readable by any member so anyone can invite someone,
+       changeable by the admin without going anywhere near the server. */
+    function inviteBlock() {
+      if (s.inviteCode === null || s.inviteCode === undefined) return null;   // a guest
+      var admin = QC.isAdmin();
+      if (!s.inviteCode) {
+        return el('div', { style: { marginTop: '14px' } }, [
+          el('p.muted', { text: 'Anyone with the link can sign up - no code is set.' }),
+          admin ? el('button.btn.quiet.sm', { type: 'button', text: 'Set an invite code',
+            style: { marginTop: '8px' }, onclick: newCode }) : null
+        ]);
+      }
+      return el('div.invite-box', { style: { marginTop: '14px' } }, [
+        el('div.kicker', { text: 'Invite code' }),
+        el('div.invite-code', { text: s.inviteCode, title: 'Tap to copy',
+          onclick: function () { copy(s.inviteCode); } }),
+        admin ? el('div.row', { style: { marginTop: '10px' } }, [
+          el('button.btn.quiet.sm', { type: 'button', text: 'New code', onclick: newCode }),
+          el('button.btn.quiet.sm', { type: 'button', text: 'Type my own', onclick: pickCode })
+        ]) : null
+      ]);
+    }
+
+    function copy(text) {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text)
+          .then(function () { QC.toast('Copied'); })
+          .catch(function () { /* a tap that does nothing is better than a scary error */ });
+      }
+    }
+
+    function newCode() {
+      QC.confirm({
+        title: 'Make a new invite code?',
+        sub: 'The old one stops working straight away. Anyone who already has an account is unaffected.',
+        ok: 'New code'
+      }).then(function (yes) {
+        if (!yes) return;
+        QC.net.setInvite().then(function (r) { QC.toast('New code: ' + r.inviteCode); })
+          .catch(function (e) { QC.toast(e.message); });
+      });
+    }
+
+    function pickCode() {
+      QC.ask({
+        title: 'Invite code',
+        sub: 'Anything your team will remember. Capitals do not matter.',
+        value: s.inviteCode || '', placeholder: 'e.g. pickled-onion', ok: 'Save'
+      }).then(function (v) {
+        if (!v) return;                      // cancelled; it never returns empty
+        QC.net.setInvite(v).catch(function (e) { QC.toast(e.message); });
+      });
+    }
 
     function adminCard() {
       if (s.adminId) {

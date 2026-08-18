@@ -50,6 +50,8 @@
     return Net.call('api/admin/set-active', 'POST', { userId: userId, active: active });
   };
   Net.setRules = function (text) { return Net.call('api/rules', 'POST', { text: text }); };
+  // Pass a code to choose one, or nothing at all to have one generated.
+  Net.setInvite = function (code) { return Net.call('api/invite', 'POST', code === undefined ? {} : { code: code }); };
 
   /** Upload a picture, sound or video. The file goes up as the raw body with
       its type in the header, so there is no multipart parsing anywhere.
