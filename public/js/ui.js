@@ -42,6 +42,25 @@
     return QC.el('span.av' + (cls ? '.' + cls : ''), { text: QC.initials(name), title: name || '' });
   };
 
+  var MEDALS = ['🥇', '🥈', '🥉'];
+
+  /* Where someone finished, in the circle their initials would otherwise be.
+     The name is written right beside it, so initials would only be saying the
+     same thing twice - the placing is the useful thing to put there.
+
+     ranked = false for someone with no result to their name. They still get
+     their row number rather than a dash: the row itself already says they have
+     not played, and one plain sentence beats two cryptic marks. */
+  QC.placeFace = function (name, place, cls, ranked) {
+    var medal = (ranked === false) ? '' : (MEDALS[place] || '');
+    // .m1/.m2/.m3 carry the metal, so the ring matches the medal it holds.
+    var mark = medal ? '.medal.m' + (place + 1) : '.place';
+    return QC.el('span.av' + (cls ? '.' + cls : '') + mark, {
+      text: medal || String(place + 1),
+      title: name || ''
+    });
+  };
+
   /* Lucide-style sparkles: the conventional "assistant" mark. An SVG rather
      than an emoji, so it inherits currentColor and renders the same on every
      machine instead of turning into whatever glyph the OS happens to ship. */

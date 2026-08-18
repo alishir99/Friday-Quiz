@@ -82,11 +82,18 @@
 
   /* quiz completeness (mirrors the server's rules) */
 
+  /* An option is real once it has words, a picture, or both - four photos with
+     no labels is a perfectly good question. Mirrors optionFilled() on the
+     server; the two have to agree or the editor and the Start button disagree. */
+  QC.optionFilled = function (q, i) {
+    return !!String(q.options[i] || '').trim() || !!(q.optionMedia && q.optionMedia[i]);
+  };
+
   QC.questionReady = function (q) {
     if (!q || !q.text.trim()) return false;
-    var filled = q.options.filter(function (o) { return o.trim(); });
+    var filled = q.options.filter(function (o, i) { return QC.optionFilled(q, i); });
     return filled.length >= QC.MIN_OPTIONS
-      && typeof q.correct === 'number' && !!(q.options[q.correct] || '').trim();
+      && typeof q.correct === 'number' && QC.optionFilled(q, q.correct);
   };
 
   QC.tieBreakerReady = function (tb) {
@@ -170,6 +177,9 @@
   QC.removeOption = function (q, index) {
     if (q.options.length <= QC.MIN_OPTIONS) return false;
     q.options.splice(index, 1);
+    // Whatever was attached to that option goes with it, or every picture
+    // below shifts up onto the wrong answer.
+    if (Array.isArray(q.optionMedia)) q.optionMedia.splice(index, 1);
     if (q.correct === index) q.correct = 0;
     else if (q.correct > index) q.correct--;
     return true;
@@ -178,6 +188,8 @@
   QC.addOption = function (q) {
     if (q.options.length >= QC.MAX_OPTIONS) return false;
     q.options.push('');
+    if (!Array.isArray(q.optionMedia)) q.optionMedia = [];
+    while (q.optionMedia.length < q.options.length) q.optionMedia.push(null);
     return true;
   };
 

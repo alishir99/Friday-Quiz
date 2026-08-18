@@ -6,6 +6,12 @@
 
   QC.screens = {};
 
+  /* The quiz master and the topic picker already know the topic - seeing it on
+     the dashboard is a reminder, not news. It stays covered by default because
+     this is the screen most likely to end up on a shared display, and kept out
+     here so it survives the re-render every server push causes. */
+  var topicShown = false;
+
   /* SIGN IN */
 
   QC.screens.auth = function () {
@@ -24,20 +30,48 @@
     var err = el('p.auth-err', { hidden: true });
     var btn = el('button.btn.primary.lg.block', { type: 'button', text: 'Continue' });
 
+    /* Someone who is here for one night should not have to invent a password
+       or hunt down the invite code. Same screen, two doors. */
+    var guest = false;
+    var lede = el('p.muted', { style: { marginTop: '8px', marginBottom: '26px' },
+      text: 'Sign in with your name and password to join this week’s quiz.' });
+    var note = el('p.dim.small', { style: { marginTop: '18px', textAlign: 'center' },
+      text: 'First time in, this creates your account with that password. Forgot it? Ask the admin to reset it from the Team page.' });
+    var swap = el('button.btn.ghost.sm.block', { type: 'button',
+      style: { marginTop: '12px' }, text: 'Just visiting? Join as a guest' });
+    var memberOnly = el('div.stack', { style: { gap: '12px' } }, [pass, inviteField]);
+
+    function setMode(asGuest) {
+      guest = asGuest;
+      memberOnly.hidden = guest;
+      err.hidden = true;
+      name.placeholder = guest ? 'Your name for the scoreboard' : 'Your name';
+      btn.textContent = guest ? 'Join the quiz' : 'Continue';
+      swap.textContent = guest ? 'On the team? Sign in instead' : 'Just visiting? Join as a guest';
+      lede.textContent = guest
+        ? 'Pick a name and jump straight in. Nothing to set up.'
+        : 'Sign in with your name and password to join this week’s quiz.';
+      note.textContent = guest
+        ? 'Guests play and score like everyone else, but never get handed next week’s quiz.'
+        : 'First time in, this creates your account with that password. Forgot it? Ask the admin to reset it from the Team page.';
+      name.focus();
+    }
+    swap.onclick = function () { setMode(!guest); };
+
     function go() {
       var v = name.value.trim();
-      var p = pass.value;
       if (!v) { name.focus(); return; }
-      if (!p) { pass.focus(); return; }
+      if (!guest && !pass.value) { pass.focus(); return; }
       btn.disabled = true;
       err.hidden = true;
-      QC.net.login(v, p, invite.value.trim())
-        .then(function () { QC.boot(); })
+      var req = guest ? QC.net.join(v) : QC.net.login(v, pass.value, invite.value.trim());
+      req.then(function () { QC.boot(); })
         .catch(function (e) {
           err.textContent = e.message;
           err.hidden = false;
           btn.disabled = false;
-          if (e.body && e.body.needInvite) {
+          if (guest) { name.focus(); }
+          else if (e.body && e.body.needInvite) {
             inviteField.hidden = false;
             invite.focus();
           } else {
@@ -46,7 +80,10 @@
         });
     }
     btn.onclick = go;
-    name.addEventListener('keydown', function (e) { if (e.key === 'Enter') pass.focus(); });
+    name.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      if (guest) go(); else pass.focus();
+    });
     pass.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
     invite.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
 
@@ -54,15 +91,12 @@
       el('div.auth-card', [
         el('div.auth-mark', { text: '🏆' }),
         el('h1', { text: 'Friday Quiz' }),
-        el('p.muted', { style: { marginTop: '8px', marginBottom: '26px' },
-          text: 'Sign in with your name and password to join this week’s quiz.' }),
+        lede,
 
-        el('div.stack', { style: { gap: '12px' } }, [name, pass]),
-        inviteField,
+        el('div.stack', { style: { gap: '12px' } }, [name, memberOnly]),
         err,
-        el('div', { style: { marginTop: '20px' } }, [btn]),
-        el('p.dim.small', { style: { marginTop: '18px', textAlign: 'center' },
-          text: 'First time in, this creates your account with that password. Forgot it? Ask the admin to reset it from the Team page.' })
+        el('div', { style: { marginTop: '20px' } }, [btn, swap]),
+        note
       ])
     ]);
   };
@@ -88,9 +122,9 @@
         e.target.disabled = true;
         QC.net.start().catch(function (err) { QC.toast(err.message); e.target.disabled = false; });
       } });
-      note = 'Everyone else will be pulled in automatically. Plug this screen into the projector.';
+      //note = 'Everyone else will be pulled in automatically. Plug this screen into the projector.';
     } else if (status === 'ready') {
-      note = 'All set. ' + QC.name(u.quizMasterId) + ' starts it, and your phone will follow along on its own.';
+      note = 'All set. ' + QC.name(u.quizMasterId) + ' starts it, and this page will follow along on its own.';
     } else if (status === 'topic' && picker) {
       action = el('button.btn.primary.lg', { type: 'button', text: 'Choose the topic', onclick: chooseTopic });
     } else if (status === 'topic' && master) {
@@ -114,7 +148,10 @@
       ready: ['done', 'Ready to play']
     }[status];
 
-    var heading = topicText || (hasTopic ? 'Topic under wraps' : 'Topic to be confirmed');
+    // topicText is only ever non-empty for the two people allowed to see it.
+    var heading = !hasTopic ? 'Topic to be confirmed'
+      : !topicText ? 'Topic under wraps'
+      : topicShown ? topicText : 'Topic chosen';
 
     return el('div.stack', { style: { gap: '22px' } }, [
       el('div.hero', [
@@ -124,12 +161,18 @@
           el('span.dim.small', { text: 'Round ' + (s.history.length + 1) })
         ]),
         el('h2', { style: { marginTop: '20px' }, text: heading }),
+        topicText ? el('button.btn.quiet.sm', {
+          type: 'button', style: { marginTop: '10px' },
+          text: topicShown ? 'Hide it' : 'Show me the topic',
+          onclick: function () { topicShown = !topicShown; QC.render(); }
+        }) : null,
         el('p.when', { text: QC.fmtDate(u.date) }),
         el('div.grid-2', { style: { marginTop: '32px' } }, [
           roleCard('Quiz master', u.quizMasterId, u.reason && u.reason.master, master),
           roleCard('Topic picker', u.topicPickerId, u.reason && u.reason.picker, picker)
         ]),
-        action ? el('div.row', { style: { marginTop: '32px' } }, [action]) : null,
+        action ? el('div.row', { style: { marginTop: '32px' } },
+          [action, (status === 'ready' && master) ? revealSwitch() : null]) : null,
         note ? el('p.muted', { style: { marginTop: action ? '14px' : '28px', fontSize: '16px' }, text: note }) : null
       ]),
 
@@ -139,11 +182,12 @@
           el('div.steps', { style: { marginTop: '8px' } }, [
             phase(hasTopic, status === 'topic', 'Topic chosen',
               !hasTopic ? QC.name(u.topicPickerId) + ' picks it'
-                : topicText ? '“' + topicText + '”'
-                : 'Kept quiet until Friday'),
+                : !topicText ? 'Kept quiet until Friday'
+                : topicShown ? '“' + topicText + '”'
+                : 'Yours to see, covered for now'),
             phase(ready, status === 'writing', 'Questions written',
               ready ? 'All 11 ready' : QC.name(u.quizMasterId) + ' is on it'),
-            phase(false, status === 'ready', 'Play on Friday', 'Everyone answers on their phone')
+            phase(false, status === 'ready', 'Play on Friday', 'Everyone answers on their own screen')
           ]),
           (master || picker) ? el('div.row', { style: { marginTop: '18px' } }, [
             hasTopic ? el('button.btn.quiet.sm', { type: 'button', text: 'Change topic', onclick: chooseTopic }) : null,
@@ -185,6 +229,25 @@
       ]);
     }
 
+    /* On: the pub way, nobody finds out anything until the end. Off: the answer
+       lands straight after each question. Sits by the Start button because
+       that is the moment you decide, and it is remembered for next time. */
+    function revealSwitch() {
+      var on = s.revealMode !== 'each';
+      var box = el('input', { type: 'checkbox', checked: on, role: 'switch' });
+      box.addEventListener('change', function () {
+        QC.net.reveal(box.checked ? 'end' : 'each')
+          .catch(function (e) { box.checked = on; QC.toast(e.message); });
+      });
+      return el('label.switch', { title: on
+        ? 'Every answer comes after the last question'
+        : 'Each answer comes straight after its question' }, [
+        box,
+        el('span.track', [el('span.knob')]),
+        el('span.switch-t', { text: 'Answers at the end' })
+      ]);
+    }
+
     function chooseTopic() {
       QC.ask({
         title: 'What is the quiz about?',
@@ -196,11 +259,15 @@
     }
 
     function overrideRoles() {
+      // Neither job can go to a guest, so do not offer them.
+      var members = QC.state.users.filter(function (u) { return !u.guest; });
       QC.pickPerson({
         title: 'Who writes the quiz?',
+        people: members,
         onPick: function (m) {
           QC.pickPerson({
             title: 'Who chooses the topic?',
+            people: members,
             onPick: function (p) {
               QC.net.setRoles(m, p).catch(function (e) { QC.toast(e.message); });
             }
@@ -224,7 +291,7 @@
     var rows = QC.leaderboard().filter(function (r) { return r.avg !== null; }).slice(0, 5);
     return el('div.board', { style: { marginTop: '14px' } }, rows.map(function (r, i) {
       return el('div.board-row' + (i === 0 ? '.p1' : ''), { style: { padding: '11px 16px' } }, [
-        el('div.pos', { style: { fontSize: '16px' }, text: String(i + 1) }),
+        QC.placeFace(r.name, i),
         el('div.nm', { style: { fontSize: '16px' }, text: r.name }),
         el('div.sc', { style: { fontSize: '18px' }, text: r.avg.toFixed(1) })
       ]);
@@ -241,15 +308,17 @@
       return null;
     };
 
-    var onlineCount = s.users.filter(function (u) { return u.online; }).length;
+    // This page is about the team, so one-night guests stay off it.
+    var members = s.users.filter(function (u) { return !u.guest; });
+    var onlineCount = members.filter(function (u) { return u.online; }).length;
 
     return el('div.stack', [
       el('div.page-head', [
         el('h1', { text: 'The team' }),
-        el('p.sub', { text: s.users.length + ' account' + (s.users.length === 1 ? '' : 's')
+        el('p.sub', { text: members.length + ' account' + (members.length === 1 ? '' : 's')
           + (onlineCount ? ' · ' + onlineCount + ' online now' : '') })
       ]),
-      el('div.list', s.users.map(function (u) {
+      el('div.list', members.map(function (u) {
         var st = statsFor(u.id);
         return el('div.list-row', [
           el('span.av-wrap', [av(u.name), el('span.presence' + (u.online ? '.on' : ''),
@@ -306,7 +375,7 @@
     function passAdmin() {
       QC.pickPerson({
         title: 'Pass admin to who?',
-        people: s.users.filter(function (u) { return u.id !== s.me; }),
+        people: s.users.filter(function (u) { return u.id !== s.me && !u.guest; }),
         onPick: function (id) { QC.net.transferAdmin(id).catch(function (e) { QC.toast(e.message); }); }
       });
     }
@@ -629,8 +698,14 @@
             .map(function (o) { return String(o == null ? '' : o); });
           while (options.length < QC.MIN_OPTIONS) options.push('');
           var correct = Number.isInteger(q.correct) && q.correct >= 0 && q.correct < options.length ? q.correct : null;
+          /* Quizzy cannot attach a file, only describe the one it wants. The
+             hints ride along on the empty slots so the quiz master knows what
+             to go and find; uploading is still theirs to do. */
+          var hints = Array.isArray(q.optionHints) ? q.optionHints : [];
           return { id: QC.uid(), text: String(q.text || ''), options: options, correct: correct,
-            note: String(q.note || ''), media: null };
+            optionMedia: options.map(function () { return null; }),
+            optionHints: options.map(function (o, i) { return String(hints[i] || ''); }),
+            note: String(q.note || ''), media: null, mediaHint: String(q.mediaHint || '') };
         });
         if (parsed.tieBreaker) {
           quiz.tieBreaker = {
@@ -713,7 +788,7 @@
         return card;
       }
 
-      var media = mediaField(q);
+      var media = mediaField(q, 'media', false, q.mediaHint);
       card.appendChild(el('div.q-body', [
         el('div.field', [
           el('label', { text: 'Question ' + (i + 1) }),
@@ -729,6 +804,8 @@
           })(),
           el('div.stack', { style: { gap: '10px', marginTop: '4px' } }, q.options.map(function (opt, oi) {
             var key = QC.OPTION_KEYS[oi];
+            if (!Array.isArray(q.optionMedia)) q.optionMedia = [];
+            while (q.optionMedia.length < q.options.length) q.optionMedia.push(null);
             return el('div.opt-row', [
               el('button.opt-key' + (q.correct === oi ? '.on' : ''), {
                 type: 'button', text: key,
@@ -736,6 +813,7 @@
                 onclick: function () { q.correct = oi; renderList(); saveSoon(); refreshHead(); }
               }),
               bindInput(q.options, oi, 'Option ' + key),
+              mediaField(q.optionMedia, oi, true, (q.optionHints || [])[oi]),
               q.options.length > QC.MIN_OPTIONS ? el('button.opt-drop', {
                 type: 'button', text: '×', 'aria-label': 'Remove option ' + key,
                 onclick: function () {
@@ -792,7 +870,9 @@
 
     /* Picture, sound or video, part of the question's own box. Files are
        dropped straight onto the question; the strip is there to click. */
-    function mediaField(target) {
+    function mediaField(target, key, compact, hint) {
+      key = key == null ? 'media' : key;
+      hint = String(hint || '').trim();
       var wrap = el('div.compose-media');
       var busy = false, busyName = '', progress = 0, fill = null;
 
@@ -801,7 +881,7 @@
 
       function draw() {
         QC.clear(wrap);
-        QC.append(wrap, [(target.media && !busy) ? preview() : dropZone()]);
+        QC.append(wrap, [(target[key] && !busy) ? preview() : dropZone()]);
       }
 
       /** Take the first usable file of a drop or a file-picker selection. */
@@ -829,7 +909,7 @@
           if (fill) fill.style.width = Math.round(f * 100) + '%';
         }).then(function (media) {
           busy = false; fill = null;
-          target.media = media;
+          target[key] = media;
           draw(); saveSoon(); refreshHead();
           QC.toast(QC.mediaLabel(media) + ' added');
         }).catch(function (e) {
@@ -860,6 +940,15 @@
         input.addEventListener('click', function (e) { e.stopPropagation(); });
 
         var pick = function () { input.click(); };
+        // Six full drop strips would bury the option they belong to, so on an
+        // option it is just the paperclip.
+        if (compact) {
+          return el('button.opt-clip', {
+            type: 'button',
+            'aria-label': hint ? 'Add media to this option: ' + hint : 'Add a picture or sound to this option',
+            title: hint ? 'Quizzy suggests: ' + hint : 'Add a picture or sound', onclick: pick
+          }, [el('span', { text: '📎', 'aria-hidden': 'true' }), input]);
+        }
         return el('div.attach', {
           role: 'button', tabindex: '0',
           'aria-label': 'Add a picture, sound or video. Drop a file on the question or press to choose one.',
@@ -869,15 +958,28 @@
           }
         }, [
           el('span.attach-icon', { text: '📎', 'aria-hidden': 'true' }),
-          el('span.attach-t', { text: 'Drop a picture, sound or video here, or click to choose one' }),
+          el('span.attach-t', { text: hint
+            ? 'Quizzy suggests: ' + hint + ' - drop it here or click to choose'
+            : 'Drop a picture, sound or video here, or click to choose one' }),
           input
         ]);
       }
 
       function preview() {
-        var m = target.media;
+        var m = target[key];
         var url = QC.mediaUrl(m);
         var node;
+        if (compact) {
+          return el('div.opt-media', [
+            m.kind === 'image'
+              ? el('img', { src: url, alt: m.name || 'Picture' })
+              : el('span.opt-media-kind', { text: m.kind === 'audio' ? '🔊' : '📺' }),
+            el('button.opt-media-x', {
+              type: 'button', text: '×', 'aria-label': 'Remove this option’s media',
+              onclick: function () { target[key] = null; draw(); saveSoon(); refreshHead(); }
+            })
+          ]);
+        }
         if (m.kind === 'image') node = el('img.media-thumb', { src: url, alt: m.name || 'Picture' });
         else if (m.kind === 'audio') node = el('audio.media-player', { src: url, controls: true, preload: 'metadata' });
         else node = el('video.media-player', { src: url, controls: true, preload: 'metadata' });
@@ -889,7 +991,7 @@
             m.name ? el('span.dim.small', { text: m.name }) : null,
             el('div.spacer'),
             el('button.btn.quiet.sm', { type: 'button', text: 'Remove', onclick: function () {
-              target.media = null;
+              target[key] = null;
               draw(); saveSoon(); refreshHead();
             } })
           ])
@@ -898,7 +1000,8 @@
 
       draw();
       // A file dropped on this question while it was closed is waiting for us.
-      if (pendingDrop) {
+      // It was aimed at the question, so an option must not intercept it.
+      if (pendingDrop && !compact) {
         var waiting = pendingDrop;
         pendingDrop = null;
         takeFiles(waiting);
@@ -1098,7 +1201,7 @@
         el('div.board', board.map(function (r, i) {
           var played = r.avg !== null;
           return el('div.board-row' + (i === 0 && played ? '.p1' : ''), [
-            el('div.pos', { text: played ? String(i + 1) : '-' }),
+            QC.placeFace(r.name, i, '', played),
             el('div', [
               el('div.nm', { text: r.name }),
               el('div.rl.dim.small', { text: played
@@ -1153,7 +1256,7 @@
       return el('div', [
         el('div.board', { style: { marginTop: '20px' } }, rank.map(function (r, i) {
           return el('div.board-row' + (i === 0 ? '.p1' : (i === rank.length - 1 ? '.last' : '')), [
-            el('div.pos', { text: String(i + 1) }),
+            QC.placeFace(r.name, i),
             el('div', [
               el('div.nm', { text: r.name }),
               r.tieGuess !== null && r.tieGuess !== undefined

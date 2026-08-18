@@ -63,8 +63,12 @@
       app.appendChild(errorScreen(QC.route, err));
     }
 
+    // A guest has no team page to speak of - nothing there applies to them.
+    var meNow = QC.user(QC.state.me);
+    var amGuest = !!(meNow && meNow.guest);
     document.querySelectorAll('.nav-links a').forEach(function (a) {
       a.classList.toggle('on', a.dataset.route === QC.route);
+      if (a.dataset.route === 'team') a.hidden = amGuest;
     });
     renderWhoami();
     window.scrollTo(0, 0);
@@ -98,7 +102,8 @@
     var me = QC.user(QC.state.me);
     QC.clear(btn);
     if (!me) return;
-    QC.append(btn, [QC.avatar(me.name), el('span', { text: me.name.split(/\s+/)[0] })]);
+    // Named so a narrow screen can drop it and keep just the face.
+    QC.append(btn, [QC.avatar(me.name), el('span.whoami-name', { text: me.name.split(/\s+/)[0] })]);
     btn.onclick = function () {
       QC.sheet({
         title: me.name,

@@ -67,6 +67,103 @@ Two settings only matter once it is publicly reachable:
 The session cookie picks up `Secure` automatically when the request arrives
 over HTTPS (`X-Forwarded-Proto`), so there is nothing to configure there.
 
+## Looking after the server
+
+For the Oracle Cloud VM in [DEPLOY.md](DEPLOY.md). Everything below is run
+over SSH — `ssh your-vm-ip`, or open the VM as a folder in VS Code with the
+Remote-SSH extension.
+
+### Where the code lives
+
+```bash
+cd /opt/friday-quiz
+ls
+```
+
+You log in as `ubuntu`, whose home directory is empty — the app is somewhere
+else entirely, at **`/opt/friday-quiz`**, owned by a separate `quiz` user
+that the service runs as. That split is deliberate: the account running the
+web server cannot read your SSH keys or use `sudo`. It also means editing
+files there needs `sudo`.
+
+The `data/` directory underneath it holds accounts, history and uploads —
+that is the part worth backing up, and the part never to `git checkout` over.
+
+### Pulling the latest version
+
+```bash
+cd /opt/friday-quiz
+sudo -u quiz git pull
+sudo systemctl restart friday-quiz
+```
+
+`sudo -u quiz` pulls **as the service user**, so the new files stay owned by
+`quiz`. Pulling as root leaves root-owned files behind and the app can then
+fail to write its own data directory.
+
+The restart is what actually swaps the running code — `git pull` alone
+changes the files on disk while the old version keeps running from memory.
+
+Check it came back up:
+
+```bash
+systemctl status friday-quiz
+curl -s localhost:8080/api/state      # {"anonymous":true,...}
+```
+
+If it did not, the log says why:
+
+```bash
+journalctl -u friday-quiz -n 50 --no-pager
+```
+
+### Changing the API key or the invite code
+
+Both live in `/opt/friday-quiz/.env`, which is readable only by the `quiz`
+user (`chmod 600`) and is gitignored, so it survives every `git pull`.
+
+```bash
+sudo nano /opt/friday-quiz/.env
+```
+
+```
+DEEPSEEK_API_KEY=sk-your-key-here
+QUIZ_INVITE_CODE=whatever-your-team-knows
+```
+
+Bare values — no quotes. The app parses this file itself, it is not a shell
+script, so `KEY="value"` would store the quotation marks as part of the value.
+
+`Ctrl+O`, Enter, `Ctrl+X` to save and leave, then:
+
+```bash
+sudo systemctl restart friday-quiz
+```
+
+The file is only read at startup, so nothing changes until you restart.
+Confirm it took:
+
+```bash
+journalctl -u friday-quiz -n 5 --no-pager   # "Signup: invite code required"
+```
+
+Changing the invite code only affects **new** sign-ups. Everyone with an
+account already keeps it.
+
+### Backing up
+
+Everything that matters is under `data/`. There is no database to dump.
+
+```bash
+sudo tar czf ~/quiz-$(date +%F).tgz -C /opt/friday-quiz data
+```
+
+Then copy it off the box (run this on your own machine, not the VM):
+
+```bash
+scp your-vm-ip:~/quiz-2026-08-18.tgz .
+```
+
 ## Quizzy, the quiz assistant
 
 **Quizzy** - "your humble servant" - is a rail down the right-hand side of

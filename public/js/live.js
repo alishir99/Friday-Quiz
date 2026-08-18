@@ -1,6 +1,6 @@
 /* live.js: the running quiz.
    Two views off the same state: the quiz master drives the big screen,
-   everyone else taps answers on their phone. */
+   everyone else answers on their own device - phone, laptop, whatever. */
 
 (function () {
   var QC = window.QC;
@@ -19,13 +19,27 @@
   function live() { return QC.state.live; }
   function currentQ() { return quiz().questions[live().index]; }
   function filledOptions(q) {
-    return q.options.map(function (t, i) { return { text: t, i: i }; })
-                    .filter(function (o) { return o.text.trim(); });
+    return q.options.map(function (t, i) {
+      return { text: t, i: i, media: (q.optionMedia || [])[i] || null };
+    }).filter(function (o) { return o.text.trim() || o.media; });
   }
 
-  /* Media on the big screen. Sound and video try to play as soon as the slide
-     appears; browsers block that until the page has been interacted with, and
-     the controls are there for when they do. */
+  /* An option's own picture or clip. Sound on an option is a stage thing -
+     six clips on one slide need the quiz master to play them one at a time. */
+  function optionMedia(m, onStage) {
+    if (!m) return null;
+    var url = QC.mediaUrl(m);
+    if (!url) return null;
+    if (m.kind === 'image') return el('img.opt-pic', { src: url, alt: m.name || '' });
+    if (!onStage) return el('span.opt-cue', { text: m.kind === 'audio' ? '🔊' : '📺' });
+    return el(m.kind === 'audio' ? 'audio.opt-clip' : 'video.opt-clip', {
+      src: url, controls: true, preload: 'metadata', playsinline: true
+    });
+  }
+
+  /* Media on the big screen. Sound and video wait for the quiz master to press
+     play: a clip that starts on its own talks over whoever is still reading the
+     question out, and there is no way to un-hear the answer. */
   function stageMedia(m) {
     if (!m) return null;
     var url = QC.mediaUrl(m);
@@ -38,16 +52,12 @@
     var node = el(m.kind === 'audio' ? 'audio' : 'video', {
       src: url, controls: true, preload: 'auto', playsinline: true
     });
-    setTimeout(function () {
-      var p = node.play();
-      if (p && p.catch) p.catch(function () { /* blocked until a click, fine */ });
-    }, 60);
     return el('div.s-media.' + m.kind, [node]);
   }
 
-  /* On a phone. Pictures are needed to answer, but ten handsets playing the
-     same clip out of sync would be chaos, so sound and video stay on the
-     big screen. */
+  /* On a player's own device. Pictures are needed to answer, but a roomful of
+     them playing the same clip a half-second apart would be chaos, so sound and
+     video stay on the big screen. */
   function phoneMedia(m) {
     if (!m) return null;
     var url = QC.mediaUrl(m);
@@ -96,6 +106,89 @@
     return String(v);
   }
 
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  /* Everyone's guess as a bar, with the real answer ruled across it. Who was
+     nearest is the whole point of the tiebreaker and a column of numbers makes
+     you work it out; the distance to the line is the answer at a glance.
+
+     Drawn as SVG so it scales from a phone to a projector without going soft,
+     and coloured by class so it follows the theme. */
+  function tieChart(rows, unit, answer) {
+    var got = rows.filter(function (r) { return r.guess !== null; });
+    if (!got.length) return null;
+
+    var ans = Number(answer);
+    var vals = got.map(function (r) { return Number(r.guess); }).concat([ans]);
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    if (lo === hi) { lo -= 1; hi += 1; }             // everyone said the same
+    var pad = (hi - lo) * 0.12;
+    var d0 = lo - pad, d1 = hi + pad;
+
+    var W = 1000, H = 460, L = 74, R = 26, T = 30, B = 78;
+    var plotW = W - L - R, base = H - B, plotH = base - T;
+    var y = function (v) { return base - ((v - d0) / (d1 - d0)) * plotH; };
+
+    var slot = plotW / got.length;
+    var barW = Math.min(96, slot * 0.6);
+    var best = Math.min.apply(null, got.map(function (r) { return r.diff; }));
+
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="tie-chart-svg" ' +
+            'role="img" aria-label="Everyone\'s tiebreaker guesses against the answer">';
+
+    // Scale down the left, so the bar heights mean something.
+    for (var t = 0; t <= 4; t++) {
+      var v = d0 + (d1 - d0) * (t / 4), yy = y(v);
+      s += '<line class="tc-grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + yy + '" y2="' + yy + '"/>';
+      s += '<text class="tc-tick" x="' + (L - 12) + '" y="' + (yy + 6) + '" text-anchor="end">' + esc(num(v)) + '</text>';
+    }
+
+    got.forEach(function (r, i) {
+      var cx = L + slot * (i + 0.5);
+      var gy = y(Number(r.guess));
+      var top = Math.min(gy, base), h = Math.max(2, Math.abs(base - gy));
+      var cls = 'tc-bar' + (r.diff === best ? ' best' : '');
+      s += '<rect class="' + cls + '" x="' + (cx - barW / 2) + '" y="' + top +
+           '" width="' + barW + '" height="' + h + '" rx="6"/>';
+      s += '<text class="tc-val" x="' + cx + '" y="' + (top - 10) + '" text-anchor="middle">' +
+           esc(num(r.guess)) + '</text>';
+      // First name only: surnames turn the axis into a wall of text.
+      s += '<text class="tc-name" x="' + cx + '" y="' + (base + 30) + '" text-anchor="middle">' +
+           esc(String(r.name).split(/\s+/)[0]) + '</text>';
+    });
+
+    // The answer itself, ruled across everything.
+    var ay = y(ans);
+    s += '<line class="tc-line" x1="' + L + '" x2="' + (W - R) + '" y1="' + ay + '" y2="' + ay + '"/>';
+    s += '<text class="tc-line-lbl" x="' + (W - R) + '" y="' + (ay - 12) + '" text-anchor="end">' +
+         esc(num(ans) + (unit ? ' ' + unit : '')) + '</text>';
+
+    s += '</svg>';
+    return el('div.tie-chart', { html: s });
+  }
+
+  function placeFace(name, i, big) {
+    return QC.placeFace(name, i, big ? 'lg' : '');
+  }
+
+  /* Your score as it stands, counted only over the answers already shown, and
+     sat up in the header beside the question number in the same small type.
+     Nothing to show before the first reveal - a nought then would read as
+     "you have got none right" rather than "we have not said yet". */
+  function scoreSoFar(L) {
+    var sc = L.myScore;
+    if (!sc || !sc.of) return null;
+    var done = sc.of >= L.questionCount;
+    return el('span.play-score' + (done ? '.final' : ''), {
+      title: sc.of + ' of ' + L.questionCount + ' marked so far',
+      text: (done ? 'Final ' : 'Score ') + sc.right + ' / ' + L.questionCount
+    });
+  }
+
   /* PRESENTER: the big screen */
 
   function presenter() {
@@ -125,12 +218,17 @@
     var others = L.players.filter(function (id) { return id !== L.quizMasterId; });
     return el('div.slide', [
       el('div.s-kicker', { text: QC.fmtDate(s.upcoming.date) }),
-      el('h1.s-title', { text: L.topic || 'Friday Quiz' }),
+      /* Never the topic, even though the quiz master could see it - they are
+         the one with the screen shared, and this is the slide that sits up
+         there while everyone files in. It appears on the first question. */
+      el('h1.s-title', { text: 'Friday Quiz' }),
       el('p.s-sub', { text: L.questionCount + ' questions and a tiebreaker' }),
       el('div.lobby-grid', [
         el('div.lobby-join', [
           QC.qrSvg(location.origin, 8),
-          el('div.lobby-join-label', { text: 'Scan to join' }),
+          el('div.lobby-join-label', { text: 'Scan to join from your phone' }),
+          // Spelled out for anyone whose camera will not co-operate.
+          el('div.lobby-join-or', { text: 'or open this address' }),
           el('div.lobby-join-url', { text: location.host })
         ]),
         el('div.lobby-players', [
@@ -142,7 +240,7 @@
           }))
         ])
       ]),
-      el('p.s-hint', { text: 'Everyone answers on their own phone. Press Start when you are ready.' })
+      el('p.s-hint', { text: 'Everyone answers on their own screen. Press Start when you are ready.' })
     ]);
   }
 
@@ -156,11 +254,13 @@
       stageMedia(q.media),
       // Few options read better stacked full-width on a projector than
       // squeezed into two columns with a gap at the end.
-      el('div.s-opts' + (opts.length <= 3 ? '.single' : ''), opts.map(function (o) {
+      el('div.s-opts' + (opts.length <= 3 ? '.single' : '')
+         + (opts.some(function (o) { return o.media; }) ? '.with-media' : ''), opts.map(function (o) {
         var cls = reveal ? (o.i === q.correct ? '.right' : '.wrong') : '';
         return el('div.s-opt' + cls, [
           el('span.k', { text: KEYS[o.i] }),
-          el('span', { text: o.text })
+          optionMedia(o.media, true),
+          o.text.trim() ? el('span', { text: o.text }) : null
         ]);
       })),
       reveal
@@ -200,10 +300,10 @@
               el('div.val', { text: tb.answer + (tb.unit ? ' ' + tb.unit : '') }),
               tb.note ? el('div.note', { text: tb.note }) : null
             ]),
-            guesses
+            tieChart(L.tieRows || [], tb.unit, tb.answer) || guesses
           ])
         : el('div', [
-            el('p.s-sub', { text: 'Type a number on your phone. It only matters if two people finish level.' }),
+            el('p.s-sub', { text: 'Everyone type in a number. It only matters if two people finish level.' }),
             el('div.tally' + (L.tieCount === L.playerCount && L.playerCount ? '.all-in' : ''), [
               el('div.tally-bar', [el('i', { style: { width: (L.playerCount ? (L.tieCount / L.playerCount) * 100 : 0) + '%' } })]),
               el('div.tally-text', { text: L.tieCount + ' of ' + L.playerCount + ' guessed' })
@@ -230,7 +330,7 @@
       el('div.stage-board', rows.map(function (r, i) {
         var cls = i === 0 ? '.p1' : (i === lastIdx && rows.length > 1 ? '.last' : '');
         var node = el('div.board-row' + cls, [
-          el('div.pos', { text: i === 0 ? '🏆' : String(i + 1) }),
+          placeFace(r.name, i, true),
           el('div', [
             el('div.nm', { text: r.name }),
             r.tieGuess !== null ? el('div.tag', { text: 'tiebreaker ' + r.tieGuess }) : null
@@ -295,10 +395,13 @@
 
   function presenterBar() {
     var L = live();
+    var each = L.reveal === 'each';
+    var last = L.index === L.questionCount - 1;
     var label = 'Next';
     if (L.phase === 'lobby') label = 'Start the quiz';
-    else if (L.phase === 'q' && L.index === L.questionCount - 1) label = 'Tiebreaker';
-    else if (L.phase === 'tb') label = 'Show the answers';
+    else if (L.phase === 'q') label = each ? 'Show the answer' : (last ? 'Tiebreaker' : 'Next');
+    else if (L.phase === 'a' && each) label = last ? 'Tiebreaker' : 'Next question';
+    else if (L.phase === 'tb') label = each ? 'Show the answer' : 'Show the answers';
     else if (L.phase === 'tba') label = 'Show the scores';
     else if (L.phase === 'board') label = 'Next week';
 
@@ -325,8 +428,21 @@
 
   function stepNumber(L) {
     var qc = L.questionCount;
-    var total = 2 * qc + 6;                                    // qc=10 -> 26, as before
     var n = 1;
+
+    // Question and answer alternate, so there is no separate gap slide.
+    if (L.reveal === 'each') {
+      var total = 2 * qc + 5;
+      if (L.phase === 'q') n = 2 + 2 * L.index;
+      else if (L.phase === 'a') n = 3 + 2 * L.index;
+      else if (L.phase === 'tb') n = 2 * qc + 2;
+      else if (L.phase === 'tba') n = 2 * qc + 3;
+      else if (L.phase === 'board') n = 2 * qc + 4;
+      else if (L.phase === 'roles') n = 2 * qc + 5;
+      return { text: n + ' / ' + total, pct: (n / total) * 100 };
+    }
+
+    var totalEnd = 2 * qc + 6;                                 // qc=10 -> 26, as before
     if (L.phase === 'q') n = 2 + L.index;
     else if (L.phase === 'tb') n = qc + 2;
     else if (L.phase === 'gap') n = qc + 3;
@@ -334,10 +450,10 @@
     else if (L.phase === 'tba') n = 2 * qc + 4;
     else if (L.phase === 'board') n = 2 * qc + 5;
     else if (L.phase === 'roles') n = 2 * qc + 6;
-    return { text: n + ' / ' + total, pct: (n / total) * 100 };
+    return { text: n + ' / ' + totalEnd, pct: (n / totalEnd) * 100 };
   }
 
-  /* PLAYER: the phone */
+  /* PLAYER: whatever they are holding */
 
   function player() {
     var L = live();
@@ -373,6 +489,7 @@
     return el('div.play', [
       el('div.play-head', [
         el('span.play-step', { text: 'Question ' + (L.index + 1) + ' of ' + L.questionCount }),
+        scoreSoFar(L),
         mine !== undefined ? el('span.pill.done', { text: '✓ Answer sent' }) : null
       ]),
       el('h2.play-q', { text: q.text }),
@@ -385,6 +502,7 @@
           }
         }, [
           el('span.k', { text: KEYS[o.i] }),
+          optionMedia(o.media, false),
           el('span.t', { text: o.text }),
           mine === o.i ? el('span.tick', { text: '✓' }) : null
         ]);
@@ -397,23 +515,43 @@
 
   function plTie() {
     var tb = quiz().tieBreaker, L = live();
+    // One guess only, so a guess already on record locks the whole form.
+    var sent = L.myTieGuess !== null;
     var input = el('input.input.play-number', {
       type: 'number', step: 'any', inputmode: 'decimal',
       placeholder: 'Your number',
-      value: L.myTieGuess === null ? '' : L.myTieGuess
+      value: sent ? L.myTieGuess : '',
+      disabled: sent
     });
+    var btn = el('button.btn.primary.lg.block', {
+      type: 'button', style: { marginTop: '16px' },
+      text: sent ? '✓ Guess sent' : 'Send my guess', disabled: sent
+    });
+
     var send = function () {
+      if (btn.disabled) return;
       if (input.value === '') { input.focus(); return; }
+      // Down before the request goes out, not after it lands - a double tap is
+      // faster than a round trip, and that is exactly what we are stopping.
+      btn.disabled = true;
+      input.disabled = true;
       QC.net.tiebreak(Number(input.value))
-        .then(function () { QC.toast('Guess sent'); })
-        .catch(function (e) { QC.toast(e.message); });
+        .then(function () { btn.textContent = '✓ Guess sent'; QC.toast('Guess sent'); })
+        .catch(function (e) {
+          // It never landed, so let them try again.
+          btn.disabled = false;
+          input.disabled = false;
+          QC.toast(e.message);
+        });
     };
+    btn.onclick = send;
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
 
     return el('div.play', [
       el('div.play-head', [
         el('span.play-step', { text: 'Tiebreaker' }),
-        L.myTieGuess !== null ? el('span.pill.done', { text: '✓ Guess sent' }) : null
+        scoreSoFar(L),
+        sent ? el('span.pill.done', { text: '✓ Guess sent' }) : null
       ]),
       el('h2.play-q', { text: tb.text }),
       phoneMedia(tb.media),
@@ -421,9 +559,10 @@
         input,
         tb.unit ? el('span.hint', { text: 'in ' + tb.unit }) : null
       ]),
-      el('button.btn.primary.lg.block', { type: 'button', text: 'Send my guess',
-        style: { marginTop: '16px' }, onclick: send }),
-      el('p.play-foot', { text: 'Closest number wins if two people finish level.' })
+      btn,
+      el('p.play-foot', { text: sent
+        ? 'That one is locked in. Closest number wins if two people finish level.'
+        : 'You only get one go, so make it count. Closest number wins if two people finish level.' })
     ]);
   }
 
@@ -436,6 +575,7 @@
     return el('div.play', [
       el('div.play-head', [
         el('span.play-step', { text: 'Question ' + (L.index + 1) + ' of ' + L.questionCount }),
+        scoreSoFar(L),
         el('span.pill.' + (right ? 'done' : 'wait'), { text: right ? '✓ You got it' : (mine === undefined ? 'No answer' : '✗ Not this time') })
       ]),
       el('h2.play-q', { text: q.text }),
@@ -457,17 +597,20 @@
     var out = L.myTieGuess === null ? null : Math.abs(L.myTieGuess - Number(tb.answer));
     var guesses = tieBoard(L.tieRows, tb.unit, false);
     return el('div.play', [
-      el('div.play-head', [el('span.play-step', { text: 'Tiebreaker' })]),
+      el('div.play-head', [el('span.play-step', { text: 'Tiebreaker' }), scoreSoFar(L)]),
       el('h2.play-q', { text: tb.text }),
       el('div.s-answer', { style: { marginTop: '20px' } }, [
         el('div.lbl', { text: 'Answer' }),
         el('div.val', { text: tb.answer + (tb.unit ? ' ' + tb.unit : '') }),
         el('div.note', { text: L.myTieGuess === null
           ? 'You did not guess.'
-          : 'You said ' + L.myTieGuess + ', out by ' + num(out) })
+          : 'You said ' + L.myTieGuess + ', out by ' + num(out) }),
+        // The quiz master's own explanation, same as the questions get.
+        tb.note ? el('div.note.tb-note', { text: tb.note }) : null
       ]),
       guesses ? el('div', { style: { marginTop: '22px' } }, [
         el('div.kicker', { text: 'Everyone’s guesses' }),
+        tieChart(L.tieRows || [], tb.unit, tb.answer),
         guesses
       ]) : null
     ]);
@@ -484,7 +627,7 @@
       el('div.board', rows.map(function (r, i) {
         var cls = i === 0 ? '.p1' : (i === lastIdx && rows.length > 1 ? '.last' : '');
         return el('div.board-row' + cls, [
-          el('div.pos', { text: i === 0 ? '🏆' : String(i + 1) }),
+          placeFace(r.name, i, false),
           el('div.nm', { text: r.name + (r.userId === me ? '  ·  you' : '') }),
           el('div.sc', { text: r.score + '/' + L.questionCount })
         ]);

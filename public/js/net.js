@@ -35,6 +35,8 @@
   Net.login = function (name, password, invite) {
     return Net.call('api/login', 'POST', { name: name, password: password, invite: invite });
   };
+  // Nickname only - no password, no invite code. Always a new account.
+  Net.join = function (name) { return Net.call('api/join', 'POST', { name: name }); };
   Net.logout = function () { return Net.call('api/logout', 'POST', {}); };
   Net.changePassword = function (oldPassword, newPassword) {
     return Net.call('api/change-password', 'POST', { oldPassword: oldPassword, newPassword: newPassword });
@@ -91,6 +93,8 @@
   Net.answer  = function (option) { return Net.call('api/live/answer', 'POST', { option: option }); };
   Net.tiebreak = function (value) { return Net.call('api/live/tiebreak', 'POST', { value: value }); };
   Net.liveRoles = function (m, p) { return Net.call('api/live/roles', 'POST', { quizMasterId: m, topicPickerId: p }); };
+  // 'end' = all the answers after the last question, 'each' = straight away.
+  Net.reveal  = function (mode) { return Net.call('api/live/reveal', 'POST', { mode: mode }); };
   Net.finish  = function () { return Net.call('api/live/finish', 'POST', {}); };
   Net.stop    = function () { return Net.call('api/live/stop', 'POST', {}); };
 

@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "dev": "node server.mjs 8080"
+    "dev": "node server.mjs 8080",
+    "test": "node --test test/smoke.mjs"
   },
   "engines": { "node": ">=18" }
 }

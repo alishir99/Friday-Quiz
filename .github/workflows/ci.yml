@@ -1,0 +1,56 @@
+# There is no build step and no dependencies to install, so CI only has two
+# jobs to do: prove every file still parses, and prove the server still comes
+# up and behaves. Both run in seconds.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is what the VM runs (see deploy/setup.sh); 24 is the warning
+        # shot for whatever the VM upgrades to next.
+        node: ['22', '24']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No npm install: the app has no dependencies, and keeping it that way
+      # is the point. This fails the build if one ever sneaks in.
+      - name: Check for dependencies
+        run: |
+          if grep -qE '"(dependencies|devDependencies)"' package.json; then
+            echo "This app is meant to have no dependencies. Something added one."
+            exit 1
+          fi
+
+      - name: Syntax-check every script
+        run: |
+          node --check server.mjs
+          for f in public/js/*.js test/*.mjs; do
+            node --check "$f" || exit 1
+          done
+
+      - name: Smoke test
+        run: npm test
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # setup.sh is piped straight into sudo bash on a fresh VM, so a typo in
+      # it is a bad afternoon. shellcheck is preinstalled on GitHub runners.
+      - name: Check the deploy script
+        run: shellcheck deploy/setup.sh
