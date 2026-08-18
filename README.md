@@ -150,6 +150,64 @@ journalctl -u friday-quiz -n 5 --no-pager   # "Signup: invite code required"
 Changing the invite code only affects **new** sign-ups. Everyone with an
 account already keeps it.
 
+### Removing someone by hand
+
+There is no delete button. Everything lives in one JSON file, so removing an
+account means editing it — carefully, and **never while the server is running**.
+
+> The app keeps the whole database in memory and rewrites the file on every
+> change. Edit it live and the next save silently overwrites your work. Stop
+> the service first. This is the step people skip.
+
+Find the person's id:
+
+```bash
+sudo node -e "require('/opt/friday-quiz/data/friday-quiz.json').users
+  .forEach(u => console.log(u.id, u.name))"
+```
+
+Their id may be referenced in five places. Check before deleting:
+
+| Field | If it points at them |
+|---|---|
+| `adminId` | Nobody can reset passwords or edit the rules. Hand admin over first, from **Team → Pass admin**. |
+| `upcoming.quizMasterId` | Nobody is down to write the next quiz. |
+| `upcoming.topicPickerId` | Nobody is down to pick the topic. |
+| `history[].quizMasterId` / `topicPickerId` | Past quizzes show **"?"** where their name was. |
+| `history[].ranking[].memberId` | Harmless — each row also stores the name, so old scoreboards still read correctly. |
+
+Then:
+
+```bash
+cd /opt/friday-quiz
+
+# 1. Stop it, or your edit gets overwritten.
+sudo systemctl stop friday-quiz
+
+# 2. Back up. Cheap, and the only way back.
+sudo cp data/friday-quiz.json ~/quiz-before-delete-$(date +%F-%H%M).json
+
+# 3. Delete by name (case-insensitive). jq writes valid JSON, which hand
+#    editing does not guarantee.
+sudo jq '.users |= map(select((.name | ascii_downcase) != "theirname"))' \
+  data/friday-quiz.json > /tmp/fq.json
+
+# 4. Check it parses and says what you expect before putting it back.
+node -e "const d=require('/tmp/fq.json'); console.log(d.users.map(u=>u.name))"
+
+# 5. Put it in place, keeping the service user as the owner.
+sudo install -o quiz -g quiz -m 600 /tmp/fq.json data/friday-quiz.json
+sudo systemctl start friday-quiz
+```
+
+If you deleted the quiz master or the topic picker, set the rota again from
+the dashboard afterwards (**admin → change who does what next week**), or the
+home screen will point at somebody who is no longer there.
+
+Signed-in sessions live in memory only, so a deleted person is signed out the
+moment the service restarts. The name is free again immediately — they can
+sign up afresh with the invite code, and it will be a new, empty account.
+
 ### Backing up
 
 Everything that matters is under `data/`. There is no database to dump.
