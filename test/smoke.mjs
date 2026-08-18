@@ -474,6 +474,66 @@ test('a guest plays and scores, but never inherits the quiz', async () => {
   assert.equal(master.name, 'Bea');
 });
 
+/* Removing is a flag, not a delete: the person stops being able to sign in and
+   drops out of the rota, but every quiz they played still reads properly. */
+test('the admin can remove someone, and put them back', async () => {
+  // A spare body to remove, so nothing load-bearing is disturbed.
+  await signIn('Spare', 'secret1', INVITE, 'spare');
+  const state = await stateAs('ali');
+  const spare = state.users.find((u) => u.name === 'Spare');
+
+  const gone = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: spare.id, active: false }, as: 'ali'
+  });
+  assert.equal(gone.status, 200);
+
+  const after = await stateAs('ali');
+  assert.equal(after.users.find((u) => u.id === spare.id).active, false,
+    'still listed, so past quizzes keep working');
+
+  // Signed out on the spot, and the password no longer gets them back in.
+  const locked = await signIn('Spare', 'secret1', undefined);
+  assert.equal(locked.status, 403);
+
+  // A wrong password still reads as a wrong password, so this cannot be used
+  // to work out who has been removed.
+  const wrongPw = await signIn('Spare', 'nope1234', undefined);
+  assert.equal(wrongPw.status, 401);
+
+  const back = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: spare.id, active: true }, as: 'ali'
+  });
+  assert.equal(back.status, 200);
+  assert.equal((await signIn('Spare', 'secret1', undefined)).status, 200, 'and they are back');
+});
+
+test('removing cannot leave a job with nobody holding it', async () => {
+  const state = await stateAs('ali');
+  const meId = state.me;
+  const master = state.upcoming.quizMasterId;
+  const picker = state.upcoming.topicPickerId;
+
+  const self = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: meId, active: false }, as: 'ali'
+  });
+  assert.equal(self.status, 400, 'not yourself');
+
+  const theMaster = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: master, active: false }, as: 'ali'
+  });
+  assert.ok(theMaster.status >= 400, 'not whoever is writing the next quiz');
+
+  const thePicker = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: picker, active: false }, as: 'ali'
+  });
+  assert.ok(thePicker.status >= 400, 'nor whoever is picking the topic');
+
+  const notAdmin = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: master, active: false }, as: 'bea'
+  });
+  assert.equal(notAdmin.status, 403, 'and only the admin may do any of it');
+});
+
 /* A name is a name however it is capitalised, and the invite code gets passed
    round by word of mouth so it arrives however the sender felt. A password is
    not in that category and must stay exactly as typed. */

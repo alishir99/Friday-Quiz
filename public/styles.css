@@ -849,6 +849,11 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .stage-board .board-row .sc { font-size: clamp(24px, min(2.8vw, 4.2vh), 46px); }
 .stage-board .board-row .tag { font-size: clamp(12px, min(1.1vw, 1.65vh), 17px); }
 
+/* Someone taken off the team. Dimmed rather than hidden - the admin needs to
+   see who is in here to put them back. */
+.list-row.is-removed { opacity: .55; }
+.list-row.is-removed .nm { text-decoration: line-through; text-decoration-thickness: 1px; }
+
 /* Your running score, on your own screen only */
 
 /* Same small caps as the question counter it sits beside, with a hairline to

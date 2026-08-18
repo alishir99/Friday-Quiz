@@ -260,7 +260,7 @@
 
     function overrideRoles() {
       // Neither job can go to a guest, so do not offer them.
-      var members = QC.state.users.filter(function (u) { return !u.guest; });
+      var members = QC.state.users.filter(function (u) { return !u.guest && u.active !== false; });
       QC.pickPerson({
         title: 'Who writes the quiz?',
         people: members,
@@ -309,7 +309,9 @@
     };
 
     // This page is about the team, so one-night guests stay off it.
-    var members = s.users.filter(function (u) { return !u.guest; });
+    var everyone = s.users.filter(function (u) { return !u.guest; });
+    var members = everyone.filter(function (u) { return u.active !== false; });
+    var removed = everyone.filter(function (u) { return u.active === false; });
     var onlineCount = members.filter(function (u) { return u.online; }).length;
 
     return el('div.stack', [
@@ -334,9 +336,36 @@
           s.upcoming && s.upcoming.quizMasterId === u.id ? el('span.pill', { text: 'Quiz master' }) : null,
           s.upcoming && s.upcoming.topicPickerId === u.id ? el('span.pill', { text: 'Topic picker' }) : null,
           QC.isAdmin() && u.id !== s.me ? el('button.btn.quiet.sm', { type: 'button', text: 'Reset password',
-            onclick: function () { resetPassword(u); } }) : null
+            onclick: function () { resetPassword(u); } }) : null,
+          QC.isAdmin() && u.id !== s.me ? el('button.btn.quiet.sm', { type: 'button', text: 'Remove',
+            onclick: function () { removeMember(u); } }) : null
         ]);
       })),
+
+      /* Removed people are kept, not deleted, so every quiz they played still
+         reads properly. Only the admin needs to see the list. */
+      (QC.isAdmin() && removed.length) ? el('div.card.flat', { style: { marginTop: '10px' } }, [
+        el('div.kicker', { text: 'Removed  ·  ' + removed.length }),
+        el('p.muted', { style: { marginTop: '8px', marginBottom: '14px' } },
+          'They cannot sign in and are out of the rota. Past quizzes still show their name.'),
+        el('div.list', removed.map(function (u) {
+          var st = statsFor(u.id);
+          return el('div.list-row.is-removed', [
+            av(u.name),
+            el('div', [
+              el('div.person', [el('span.nm', { text: u.name })]),
+              el('div.rl', { text: st && st.played ? st.played + ' played · ' + st.hosted + ' hosted' : 'Never played' })
+            ]),
+            el('div.spacer'),
+            el('button.btn.quiet.sm', { type: 'button', text: 'Put back',
+              onclick: function () {
+                QC.net.setActive(u.id, true)
+                  .then(function () { QC.toast(u.name + ' is back on the team'); })
+                  .catch(function (e) { QC.toast(e.message); });
+              } })
+          ]);
+        }))
+      ]) : null,
 
       adminCard(),
 
@@ -375,13 +404,27 @@
     function passAdmin() {
       QC.pickPerson({
         title: 'Pass admin to who?',
-        people: s.users.filter(function (u) { return u.id !== s.me && !u.guest; }),
+        people: s.users.filter(function (u) { return u.id !== s.me && !u.guest && u.active !== false; }),
         onPick: function (id) { QC.net.transferAdmin(id).catch(function (e) { QC.toast(e.message); }); }
       });
     }
 
     /* Forgot-password recovery: the admin resets it and relays the
        temporary one directly. */
+    function removeMember(u) {
+      QC.confirm({
+        title: 'Remove ' + u.name + '?',
+        sub: 'They will be signed out and cannot sign back in, and they drop out of the rota. '
+           + 'Nothing is deleted - every quiz they played still shows their name, and you can put them back.',
+        ok: 'Remove', danger: true
+      }).then(function (yes) {
+        if (!yes) return;
+        QC.net.setActive(u.id, false)
+          .then(function () { QC.toast(u.name + ' removed'); })
+          .catch(function (e) { QC.toast(e.message); });
+      });
+    }
+
     function resetPassword(u) {
       QC.confirm({
         title: 'Reset ' + u.name + '’s password?',

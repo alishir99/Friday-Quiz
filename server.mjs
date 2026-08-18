@@ -119,6 +119,11 @@ const userById = (id) => db.users.find((u) => u.id === id) || null;
 const isAdmin = (id) => !!db.adminId && db.adminId === id;
 // Guests play and score like everyone else, but never host and never admin.
 const isGuest = (id) => { const u = userById(id); return !!(u && u.guest); };
+/* Removed, not deleted. Their past quizzes still show their name - only
+   `active: false` is ever written, so nothing that points at them breaks.
+   Older records have no flag at all, which counts as present. */
+const isRemoved = (id) => { const u = userById(id); return !!u && u.active === false; };
+const activeUsers = () => db.users.filter((u) => u.active !== false);
 // Names and the invite code are matched loosely; passwords never are.
 const sameCode = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 const MAX_NAME = 40;
@@ -465,7 +470,7 @@ function byNearest(a, b) {
 function deriveRoles(rows) {
   // A guest can finish last without inheriting next week's quiz - they are
   // here for one night and may never come back.
-  const eligible = rows.filter((r) => !isGuest(r.userId));
+  const eligible = rows.filter((r) => !isGuest(r.userId) && !isRemoved(r.userId));
   if (!eligible.length) {
     // Only guests played. Leave next week exactly as it stands rather than
     // handing the quiz to someone who cannot write it.
@@ -704,7 +709,7 @@ function ensureUpcoming() {
   if (db.upcoming) return;
   // Seed from members only - a guest who happens to arrive first should not
   // end up owning the first Friday.
-  const members = db.users.filter((u) => !u.guest);
+  const members = db.users.filter((u) => !u.guest && u.active !== false);
   if (members.length < 2) return;
   const [a, b] = members;
   db.upcoming = {
@@ -769,6 +774,13 @@ async function api(req, res, path) {
       // Account predates passwords: whatever is typed the first time becomes it.
       Object.assign(user, hashPassword(pass));
       await persist();
+    } else if (user.active === false) {
+      /* Checked after the password so a wrong guess still says "wrong
+         password" - otherwise this doubles as a way to probe who was removed. */
+      if (!verifyPassword(pass, user.salt, user.hash)) {
+        return json(res, 401, { error: 'Wrong password for "' + user.name + '". If that is not you, sign in with a different name (e.g. add a last initial).' });
+      }
+      return json(res, 403, { error: 'That account has been removed. Ask the admin if this is a mistake.' });
     } else if (!verifyPassword(pass, user.salt, user.hash)) {
       // Could be a typo, or someone else who happens to share this name and
       // has never seen this account's password - the message covers both.
@@ -788,7 +800,7 @@ async function api(req, res, path) {
     if (!clean) return json(res, 400, { error: 'Enter a name' });
     // Guests may share a name with each other, but not with the team - a
     // stranger should not be able to appear on the board as a teammate.
-    if (db.users.some((u) => !u.guest && u.name.toLowerCase() === clean.toLowerCase())) {
+    if (db.users.some((u) => !u.guest && u.active !== false && u.name.toLowerCase() === clean.toLowerCase())) {
       return json(res, 409, { error: 'Someone on the team goes by that name. Try another.' });
     }
     /* Always a fresh account, even for a repeated name. With no password
@@ -851,12 +863,45 @@ async function api(req, res, path) {
     return json(res, 200, { ok: true });
   }
 
+  /* Removing someone. A flag rather than a delete: every past quiz they played
+     still lists them, and the scoreboards keep working. They cannot sign in,
+     do not appear on the team, and are out of the rota - but nothing that
+     points at them dangles, and putting them back is one click. */
+  if (path === '/api/admin/set-active' && req.method === 'POST') {
+    if (!requireUser()) return;
+    if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can do this' });
+    const { userId, active } = await readBody(req);
+    const target = userById(userId);
+    if (!target) return json(res, 400, { error: 'No such person' });
+
+    if (active === false) {
+      // Each of these would leave a job with nobody holding it.
+      if (userId === me) return json(res, 400, { error: 'You cannot remove yourself' });
+      if (isAdmin(userId)) return json(res, 400, { error: 'Pass admin on first' });
+      if (db.upcoming && db.upcoming.quizMasterId === userId) {
+        return json(res, 409, { error: target.name + ' is writing the next quiz. Hand that over first.' });
+      }
+      if (db.upcoming && db.upcoming.topicPickerId === userId) {
+        return json(res, 409, { error: target.name + ' is picking the next topic. Hand that over first.' });
+      }
+      target.active = false;
+      // Out of the room, and out of any game already running.
+      for (const [token, uid_] of tokens) if (uid_ === userId) tokens.delete(token);
+      if (db.live) db.live.players = db.live.players.filter((p) => p !== userId);
+    } else {
+      target.active = true;
+    }
+    await persist(); broadcast();
+    return json(res, 200, { ok: true, active: target.active });
+  }
+
   if (path === '/api/admin/transfer' && req.method === 'POST') {
     if (!requireUser()) return;
     if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can do this' });
     const { userId } = await readBody(req);
     if (!userById(userId)) return json(res, 400, { error: 'No such person' });
     if (isGuest(userId)) return json(res, 400, { error: 'Guests cannot be admin' });
+    if (isRemoved(userId)) return json(res, 400, { error: 'That person has been removed' });
     db.adminId = userId;
     await persist(); broadcast();
     return json(res, 200, { ok: true });
@@ -903,7 +948,7 @@ async function api(req, res, path) {
     clients.add(client);
     // Opening the app during a game is what joining means - this is what the
     // lobby counts. Once in, you stay in: a phone locking should not drop you.
-    if (db.live && !db.live.players.includes(me)) db.live.players.push(me);
+    if (db.live && !db.live.players.includes(me) && !isRemoved(me)) db.live.players.push(me);
     broadcast();      // tell everyone else this person just came online
     const beat = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
     req.on('close', () => { clearInterval(beat); clients.delete(client); broadcast(); });
@@ -1004,6 +1049,8 @@ async function api(req, res, path) {
     if (topicPickerId && !userById(topicPickerId)) return json(res, 400, { error: 'No such person' });
     if (quizMasterId && isGuest(quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz master' });
     if (topicPickerId && isGuest(topicPickerId)) return json(res, 400, { error: 'A guest cannot pick the topic' });
+    if (quizMasterId && isRemoved(quizMasterId)) return json(res, 400, { error: 'That person has been removed' });
+    if (topicPickerId && isRemoved(topicPickerId)) return json(res, 400, { error: 'That person has been removed' });
     if (quizMasterId) db.upcoming.quizMasterId = quizMasterId;
     if (topicPickerId) db.upcoming.topicPickerId = topicPickerId;
     db.upcoming.reason = { master: 'Set by hand', picker: 'Set by hand' };
@@ -1026,7 +1073,7 @@ async function api(req, res, path) {
          before anyone had turned up, growing by one for every guest who ever
          played. And not an empty array either - the people already sitting
          there waiting for you to press Start are exactly the ones playing. */
-      players: [...onlineIds()],
+      players: [...onlineIds()].filter((id) => !isRemoved(id)),
       reveal: REVEAL_MODES.includes(db.revealMode) ? db.revealMode : 'end',
       answers: {}, tieGuesses: {}, startedAt: new Date().toISOString()
     };

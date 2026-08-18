@@ -200,6 +200,9 @@
     if (!s) return [];
     var byId = {};
     s.users.forEach(function (u) {
+      // Removed people keep their place in past quizzes but drop off the
+      // standings - this table is who is playing now.
+      if (u.active === false) return;
       byId[u.id] = { userId: u.id, name: u.name, played: 0, total: 0, wins: 0, spoons: 0, hosted: 0, best: null };
     });
     s.history.forEach(function (h) {

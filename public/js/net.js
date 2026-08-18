@@ -45,6 +45,10 @@
 
   Net.claimAdmin = function () { return Net.call('api/admin/claim', 'POST', {}); };
   Net.transferAdmin = function (userId) { return Net.call('api/admin/transfer', 'POST', { userId: userId }); };
+  // Removing is a flag, not a delete - the same call puts someone back.
+  Net.setActive = function (userId, active) {
+    return Net.call('api/admin/set-active', 'POST', { userId: userId, active: active });
+  };
   Net.setRules = function (text) { return Net.call('api/rules', 'POST', { text: text }); };
 
   /** Upload a picture, sound or video. The file goes up as the raw body with
