@@ -724,7 +724,13 @@
           o.i === q.correct ? el('span.tick', { text: '✓' }) : null
         ]);
       })),
-      q.note ? el('p.play-note', { text: q.note }) : null
+      /* Same mark as the projector footnote, so the two screens are plainly
+         showing the same thing. It keeps its card here: a phone has no slide
+         floor for a footnote to sit on. */
+      q.note ? el('div.play-note', [
+        el('span.i', { html: QC.infoIcon, 'aria-hidden': 'true' }),
+        el('span.t', { text: q.note })
+      ]) : null
     ]);
   }
 
