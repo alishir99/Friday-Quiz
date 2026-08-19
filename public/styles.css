@@ -726,6 +726,26 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
   max-width: 1500px; width: 100%; margin: 0 auto;
   overflow: hidden;
 }
+/* The canvas the slide is drawn on. One hairline and a soft shadow, no more:
+   this is the paper, and anything louder competes with what is written on it.
+   It clips, so the slide inside it does not have to - the fit pass scales that
+   slide, and a slide that clips itself would be cut before the transform ever
+   saw it. */
+.slide-frame {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  margin: clamp(10px, 1.4vh, 22px) clamp(10px, 1.2vw, 26px) 0;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: clamp(14px, 1.8vh, 22px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 10px 30px rgba(0, 0, 0, .05);
+  overflow: hidden;
+}
+.slide-frame > .slide { overflow: visible; flex: 1; min-height: 0; }
+/* On a phone the slide scrolls as a page, so the frame gets out of the way. */
+@media (max-width: 700px) {
+  .slide-frame { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+}
 /* Nothing gives up room it is actually drawing in. A child told it may shrink
    gets a smaller box, but its contents keep their size and spill out over
    whatever comes next - an overlap, not a saving. That is what put the join
@@ -1101,6 +1121,11 @@ body.playing .app { padding: 0; max-width: none; }
   position: fixed; inset: 0; z-index: 100; overflow: hidden;
   background: var(--bg); color: var(--ink);
   display: flex; flex-direction: column;
+  /* This frame does the clipping, not the slide inside it. The fit pass scales
+     a slide down when it would not otherwise fit, and `overflow: hidden` on the
+     slide itself would cut the content off before the transform ever saw it -
+     shrinking an already-cut slide, which leaves the same information missing
+     and a gap at the bottom where it used to be. */
   --pad: clamp(28px, min(5vw, 7.5vh), 80px);
 }
 
@@ -1116,10 +1141,6 @@ body.playing .app { padding: 0; max-width: none; }
    of them matter - a clipped invite code is a person who cannot join. So it is
    budgeted rather than sized by eye: the heading gives up the room the join
    card needs, and everything is in vh so the budget holds at any height. */
-/* And if some screen still defeats the budget, it scrolls rather than quietly
-   eating the invite code. A scrollbar on a slide is ugly; a code nobody can
-   read is worse, and it fails silently. */
-.lobby-slide { overflow-y: auto; }
 .lobby-slide .s-title { font-size: clamp(30px, min(4.4vw, 6.2vh), 68px); }
 .lobby-slide .s-kicker { margin-bottom: clamp(8px, 1.1vh, 14px); }
 .lobby-slide .s-sub {

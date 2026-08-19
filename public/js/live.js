@@ -222,10 +222,45 @@
 
     if (same) body.classList.add('still');
     var wrap = el('div.stage-live');
-    wrap.appendChild(body);
+    /* The slide sits on a canvas of its own rather than bleeding into the
+       window. It gives the content an edge to sit inside, which is what makes
+       the scaling read as deliberate instead of as things drifting about. */
+    wrap.appendChild(el('div.slide-frame', body));
     wrap.appendChild(presenterBar());
+    /* Laid out first, measured second. The slide has to be in the document and
+       have its fonts before anything can know whether it fits. */
+    requestAnimationFrame(fitSlide);
     return wrap;
   }
+
+  /* Shrink a slide that would otherwise be cut off by the stage bar.
+     Everything on a slide matters - a clipped tally or a half-eaten invite
+     code is information silently withheld - and the layout cannot always win
+     on its own: a four-line question with four long answers is simply taller
+     than some screens.
+     This runs after the natural layout, so at normal sizes it measures, finds
+     nothing wrong and does nothing at all. It only ever scales down. */
+  function fitSlide() {
+    var slide = document.querySelector('.slide-frame > .slide');
+    // Phones scroll the slide instead; scaling text down there helps nobody.
+    if (!slide || !document.body.classList.contains('presenting')) return;
+
+    slide.style.transform = '';                       // measure unscaled
+    var room = slide.clientHeight, need = slide.scrollHeight;
+    if (!room || need <= room + 1) return;
+
+    /* No floor. Small and readable beats large and cut in half, and a floor is
+       exactly how the tally ended up behind the stage bar. If a slide is so
+       overloaded that this makes it tiny, that is worth seeing. */
+    slide.style.transformOrigin = 'top center';
+    slide.style.transform = 'scale(' + (room / need).toFixed(4) + ')';
+  }
+
+  /* A picture arriving late makes the slide taller after it was measured. */
+  document.addEventListener('load', function (e) {
+    if (e.target && /^(IMG|VIDEO)$/.test(e.target.tagName)) fitSlide();
+  }, true);
+  window.addEventListener('resize', fitSlide);
 
   function pLobby() {
     var L = live(), s = QC.state;
