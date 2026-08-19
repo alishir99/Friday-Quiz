@@ -150,10 +150,19 @@ journalctl -u friday-quiz -n 5 --no-pager   # "Signup: invite code required"
 Changing the invite code only affects **new** sign-ups. Everyone with an
 account already keeps it.
 
-### Removing someone by hand
+### Removing someone
 
-There is no delete button. Everything lives in one JSON file, so removing an
-account means editing it — carefully, and **never while the server is running**.
+Almost always: **Team → the team's fold → the person → Remove**. That marks
+them removed rather than erasing them, which is what you want — their name
+disappears from the rota and the lobby, and past scoreboards still read
+correctly instead of filling up with "?".
+
+Everything below is the other kind of removal: scrubbing someone out of the
+file entirely, because they were added by mistake and should never have
+existed. It is fiddly and there is no undo, so reach for the button first.
+
+Everything lives in one JSON file, so a hard delete means editing it —
+carefully, and **never while the server is running**.
 
 > The app keeps the whole database in memory and rewrites the file on every
 > change. Edit it live and the next save silently overwrites your work. Stop
@@ -161,16 +170,20 @@ account means editing it — carefully, and **never while the server is running*
 
 Find the person's id:
 
+Members live inside their team, so this walks the teams:
+
 ```bash
-sudo node -e "require('/opt/friday-quiz/data/friday-quiz.json').users
-  .forEach(u => console.log(u.id, u.name))"
+sudo node -e "const d=require('/opt/friday-quiz/data/friday-quiz.json');
+  for (const t of Object.values(d.teams))
+    t.users.forEach(u => console.log(t.name, u.id, u.name))"
 ```
 
-Their id may be referenced in five places. Check before deleting:
+Their id may be referenced in six places. Check before deleting:
 
 | Field | If it points at them |
 |---|---|
-| `adminId` | Nobody can reset passwords or edit the rules. Hand admin over first, from **Team → Pass admin**. |
+| `adminId` (top level) | Nobody owns the site: no new teams can be made. Hand it on first, from **Team → the admin card**. |
+| `teams[].masterId` | Nobody can reset passwords, edit the rules or change that team's code. Hand it on first. |
 | `upcoming.quizMasterId` | Nobody is down to write the next quiz. |
 | `upcoming.topicPickerId` | Nobody is down to pick the topic. |
 | `history[].quizMasterId` / `topicPickerId` | Past quizzes show **"?"** where their name was. |
@@ -187,13 +200,15 @@ sudo systemctl stop friday-quiz
 # 2. Back up. Cheap, and the only way back.
 sudo cp data/friday-quiz.json ~/quiz-before-delete-$(date +%F-%H%M).json
 
-# 3. Delete by name (case-insensitive). jq writes valid JSON, which hand
-#    editing does not guarantee.
-sudo jq '.users |= map(select((.name | ascii_downcase) != "theirname"))' \
+# 3. Delete by name (case-insensitive), from whichever team holds them. jq
+#    writes valid JSON, which hand editing does not guarantee.
+sudo jq '.teams |= map_values(
+    .users |= map(select((.name | ascii_downcase) != "theirname")))' \
   data/friday-quiz.json > /tmp/fq.json
 
 # 4. Check it parses and says what you expect before putting it back.
-node -e "const d=require('/tmp/fq.json'); console.log(d.users.map(u=>u.name))"
+node -e "const d=require('/tmp/fq.json');
+  for (const t of Object.values(d.teams)) console.log(t.name, t.users.map(u=>u.name))"
 
 # 5. Put it in place, keeping the service user as the owner.
 sudo install -o quiz -g quiz -m 600 /tmp/fq.json data/friday-quiz.json
