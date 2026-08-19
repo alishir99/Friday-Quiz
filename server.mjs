@@ -127,7 +127,14 @@ function migrateToTeams(raw) {
   team.code = String(raw.inviteCode || INVITE_CODE || '').trim();
   // Whoever was admin keeps the team, and takes the install with it.
   team.masterId = raw.adminId || null;
-  return { schema: 7, adminId: raw.adminId || null, teams: { [id]: team }, mediaTeam: {} };
+  /* Files uploaded before teams existed have no owner recorded. They can only
+     ever have belonged to this one team, so claim them - otherwise every
+     picture in the history would stop loading. */
+  const mediaTeam = {};
+  const claim = (quiz) => mediaIdsIn(quiz).forEach((mid) => { mediaTeam[mid] = id; });
+  claim(team.upcoming && team.upcoming.quiz);
+  team.history.forEach((h) => claim(h.quiz));
+  return { schema: 7, adminId: raw.adminId || null, teams: { [id]: team }, mediaTeam };
 }
 
 async function loadDb() {
@@ -343,12 +350,32 @@ function blankQuiz(authorId, topic) {
 
 /* Keep only a media reference we wrote ourselves. The file name is rebuilt
    from the id and kind, so nothing the client sends can escape MEDIA_DIR. */
-function cleanMedia(m) {
+function cleanMedia(team, m) {
   if (!m || typeof m !== 'object') return null;
   const type = MEDIA_TYPES[m.mime];
   if (!type) return null;
   if (typeof m.id !== 'string' || !/^[a-f0-9]{16,64}$/.test(m.id)) return null;
+  /* Checking the shape of the id is not enough. Anyone could paste an id they
+     saw elsewhere into a quiz and have the server accept it and serve it back,
+     which is a file belonging to another team. It has to be ours. */
+  if (!ownsMedia(team, m.id)) return null;
   return { id: m.id, kind: type.kind, mime: m.mime, name: String(m.name || '').slice(0, 120) };
+}
+
+const ownsMedia = (team, id) => !!team && db.mediaTeam[id] === team.id;
+
+/* Every media id a quiz refers to. Used to give the files that already exist
+   an owner at migration time, so the rule is the same for old and new. */
+function mediaIdsIn(quiz) {
+  const out = [];
+  const take = (m) => { if (m && typeof m.id === 'string') out.push(m.id); };
+  if (!quiz) return out;
+  (quiz.questions || []).forEach((q) => {
+    take(q.media);
+    (q.optionMedia || []).forEach(take);
+  });
+  if (quiz.tieBreaker) take(quiz.tieBreaker.media);
+  return out;
 }
 
 /* An option counts once it has something to show - words, a picture, or both.
@@ -1027,6 +1054,42 @@ async function api(req, res, path) {
     return json(res, 200, { ok: true });
   }
 
+  /* Teams. Only the site admin, who owns the install; a quiz master runs one
+     team and has no business knowing the others exist. */
+  if (path === '/api/teams' && req.method === 'GET') {
+    if (!requireUser()) return;
+    if (!isSiteAdmin(me)) return json(res, 403, { error: 'Only the site admin can see the teams' });
+    return json(res, 200, {
+      ok: true,
+      teams: teamList().map((t) => ({
+        id: t.id, name: t.name, code: t.code,
+        members: t.users.filter((u) => !u.guest && u.active !== false).length,
+        played: t.history.length,
+        masterId: t.masterId,
+        masterName: (userById(t, t.masterId) || {}).name || null
+      }))
+    });
+  }
+
+  if (path === '/api/teams' && req.method === 'POST') {
+    if (!requireUser()) return;
+    if (!isSiteAdmin(me)) return json(res, 403, { error: 'Only the site admin can add a team' });
+    const { name, code } = await readBody(req);
+    const clean = String(name || '').trim().slice(0, MAX_NAME);
+    if (!clean) return json(res, 400, { error: 'Give the team a name' });
+    const wanted = String(code || '').trim().slice(0, 80) || makeCode();
+    // Two teams sharing a code would make sign-up ambiguous.
+    if (teamList().some((t) => sameCode(wanted, t.code))) {
+      return json(res, 409, { error: 'Another team already uses that code' });
+    }
+    const id = uid();
+    const made = EMPTY_TEAM(id, clean);
+    made.code = wanted;
+    db.teams[id] = made;
+    await persist();
+    return json(res, 200, { ok: true, team: { id, name: made.name, code: made.code } });
+  }
+
   /* The invite code, changeable without a trip to the server. Send a code to
      set your own, or nothing to have one made up. */
   if (path === '/api/invite' && req.method === 'POST') {
@@ -1171,10 +1234,10 @@ async function api(req, res, path) {
         ? q.correct : null;
       // One media slot per option, however mangled the array arrived.
       const src = Array.isArray(q.optionMedia) ? q.optionMedia : [];
-      const optionMedia = options.map((_, i) => cleanMedia(src[i]));
-      return { ...q, options, optionMedia, correct, media: cleanMedia(q.media) };
+      const optionMedia = options.map((_, i) => cleanMedia(team, src[i]));
+      return { ...q, options, optionMedia, correct, media: cleanMedia(team, q.media) };
     });
-    if (quiz.tieBreaker) quiz.tieBreaker.media = cleanMedia(quiz.tieBreaker.media);
+    if (quiz.tieBreaker) quiz.tieBreaker.media = cleanMedia(team, quiz.tieBreaker.media);
     team.upcoming.quiz = { ...quiz, authorId: me, topic: team.upcoming.topic };
     await persist(); broadcast(team);
     return json(res, 200, { ok: true, ready: quizReady(team.upcoming.quiz) });
@@ -1196,6 +1259,10 @@ async function api(req, res, path) {
     const id = randomBytes(16).toString('hex');
     await mkdir(MEDIA_DIR, { recursive: true });
     await writeFile(join(MEDIA_DIR, id + '.' + type.ext), buf);
+    // Remembered before it is handed back, so the team that uploaded it is the
+    // only one that can attach it to a quiz or read it later.
+    db.mediaTeam[id] = team.id;
+    await persist();
 
     return json(res, 200, {
       ok: true,
@@ -1425,11 +1492,23 @@ const server = createServer(async (req, res) => {
   }
 
   /* Uploaded media. The name must match exactly what we wrote, so a crafted
-     path cannot reach anything outside MEDIA_DIR. */
+     path cannot reach anything outside MEDIA_DIR.
+
+     This used to be served to anyone who had the URL, signed in or not. A
+     picture can give away an answer, and under teams it would hand one team's
+     files to another, so it now needs a session on the owning team. Browsers
+     send the cookie with same-origin <img>/<audio>, so nothing has to change
+     in the markup. */
   if (path.startsWith('/media/')) {
     const name = path.slice('/media/'.length);
     const m = /^([a-f0-9]{16,64})\.([a-z0-9]{2,5})$/.exec(name);
     if (!m || !MEDIA_MIME[m[2]]) return send(res, 404, 'Not found');
+
+    const session = whoami(req);
+    const team = session ? teamById(session.teamId) : null;
+    // 404 rather than 403: whether a file exists is not their business either.
+    if (!team || !ownsMedia(team, m[1])) return send(res, 404, 'Not found');
+
     const file = join(MEDIA_DIR, m[1] + '.' + m[2]);
     if (!existsSync(file)) return send(res, 404, 'Not found');
     try {
@@ -1437,8 +1516,9 @@ const server = createServer(async (req, res) => {
       res.writeHead(200, {
         'content-type': MEDIA_MIME[m[2]],
         'content-length': buf.length,
-        // Media never changes once written, so let the browser keep it.
-        'cache-control': 'public, max-age=31536000, immutable'
+        /* Private, not public: it is now per-session, so a shared cache must
+           never hand one team's file to the next person through it. */
+        'cache-control': 'private, max-age=31536000, immutable'
       });
       return res.end(buf);
     } catch {

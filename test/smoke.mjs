@@ -43,6 +43,19 @@ const signIn = (name, password, invite, as) =>
   call('/api/login', { method: 'POST', body: { name, password, invite }, as });
 
 const stateAs = (as) => call('/api/state', { as }).then((r) => r.body);
+
+/* Media has to be uploaded before it can be attached: an id that was never
+   uploaded now belongs to nobody, which is what stops one team pasting in
+   another team's files. */
+async function upload(as, bytes = 'not really a jpeg') {
+  const res = await fetch(BASE + '/api/media', {
+    method: 'POST',
+    headers: { 'content-type': 'image/jpeg', 'x-file-name': 'pic.jpg', cookie: jar[as] },
+    body: Buffer.from(bytes)
+  });
+  const body = await res.json().catch(() => ({}));
+  return body.media || null;
+}
 const nameOf = (state, id) => (state.users.find((u) => u.id === id) || {}).name;
 
 before(async () => {
@@ -197,7 +210,9 @@ test('the quiz is never dated in the past', async () => {
 /* "Which of these is the badger?" under four photographs is a real question
    with four blank labels, so an option counts as filled once it has media. */
 test('an option can be a picture with no words', async () => {
-  const media = { id: 'a'.repeat(32), mime: 'image/jpeg', name: 'badger.jpg' };
+  const media = await upload('ali');
+  const media2 = await upload('ali');
+  assert.ok(media && media2, 'the quiz maker can upload');
   const saved = await call('/api/quiz', {
     method: 'PUT',
     as: 'ali',
@@ -207,7 +222,7 @@ test('an option can be a picture with no words', async () => {
         questions: [{
           id: 'q1', text: 'Which one is the badger?',
           options: ['', ''],
-          optionMedia: [media, { ...media, name: 'fox.jpg' }],
+          optionMedia: [media, media2],
           correct: 0
         }],
         tieBreaker: { text: 'How many?', unit: '', answer: 4 }
@@ -584,4 +599,142 @@ test('names and the invite code ignore case; passwords do not', async () => {
 
   const oddCaseInvite = await signIn('Newcomer', 'secret1', INVITE.toUpperCase(), 'newbie');
   assert.equal(oddCaseInvite.status, 200, 'invite code accepted in any case');
+});
+
+/* ---------------------------------------------------------------------------
+   Teams. Everything above runs inside the one team a fresh install starts
+   with; these add a second and prove nothing crosses between them. Kept last
+   because they add members, and creating a member mid-suite reseeds the rota.
+   --------------------------------------------------------------------------- */
+
+const CODE_B = 'badgers-only';
+
+test('the site admin can make a second team; a quiz master cannot', async () => {
+  const nope = await call('/api/teams', { method: 'POST', body: { name: 'Badgers' }, as: 'bea' });
+  assert.equal(nope.status, 403, 'being a quiz master is not being the site admin');
+
+  const made = await call('/api/teams', { method: 'POST', body: { name: 'Badgers', code: CODE_B }, as: 'ali' });
+  assert.equal(made.status, 200);
+  assert.equal(made.body.team.name, 'Badgers');
+
+  const list = await call('/api/teams', { as: 'ali' });
+  assert.equal(list.status, 200);
+  assert.equal(list.body.teams.length, 2);
+
+  const hidden = await call('/api/teams', { as: 'bea' });
+  assert.equal(hidden.status, 403, 'other teams are not a quiz master’s business');
+});
+
+test('the same name can exist on both teams', async () => {
+  // "Ali" is already on team one. The code is what says which is meant.
+  const other = await signIn('Ali', 'different1', CODE_B, 'aliB');
+  assert.equal(other.status, 200, 'a second Ali, on the other team');
+
+  const one = await stateAs('ali');
+  const two = await stateAs('aliB');
+  assert.notEqual(one.me, two.me, 'two separate accounts');
+  assert.notEqual(one.team.id, two.team.id, 'on two separate teams');
+
+  // And each password only works for its own.
+  assert.equal((await signIn('Ali', 'different1', undefined)).status, 409,
+    'ambiguous without a code, rather than guessing');
+});
+
+test('a team sees only its own members, history and rota', async () => {
+  await signIn('Bo', 'secret1', CODE_B, 'bo');
+
+  const a = await stateAs('ali');
+  const b = await stateAs('aliB');
+
+  const namesA = a.users.map((u) => u.name);
+  const namesB = b.users.map((u) => u.name);
+  assert.ok(namesB.includes('Bo'), 'Bo is on team two');
+  assert.ok(!namesA.includes('Bo'), 'and nowhere near team one');
+  assert.ok(!namesB.includes('Bea'), 'team one’s members stay on team one');
+
+  assert.notDeepEqual(a.history, b.history, 'separate histories');
+  assert.equal(b.history.length, 0, 'a new team starts with nothing played');
+  assert.notEqual(a.adminId, b.adminId, 'each team has its own quiz master');
+});
+
+test('a live game does not leak to the other team', async () => {
+  /* Earlier games rotated the duty away from Ali, so take it back first -
+     otherwise the writes below quietly 403 and this passes for the wrong
+     reason, with the other team seeing no game because there is none. */
+  const me = (await stateAs('ali')).me;
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: me }, as: 'ali' });
+
+  const wrote = await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Secret', questions: [{ id: 'q1', text: '?', options: ['a', 'b'], correct: 0 }],
+      tieBreaker: { text: 'n?', unit: '', answer: 1 } } }
+  });
+  assert.equal(wrote.status, 200, 'the quiz was actually written');
+  const started = await call('/api/live/start', { method: 'POST', as: 'ali' });
+  assert.equal(started.status, 200, 'and the game actually started');
+
+  const a = await stateAs('ali');
+  const b = await stateAs('aliB');
+  assert.ok(a.live, 'team one is playing');
+  assert.equal(b.live, null, 'team two is not, and cannot tell that anyone is');
+
+  // Nor can the other team drive it.
+  const meddle = await call('/api/live/advance', { method: 'POST', as: 'aliB' });
+  assert.equal(meddle.status, 403);
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});
+
+test('a past quiz cannot be fetched by id from another team', async () => {
+  const a = await stateAs('ali');
+  assert.ok(a.history.length, 'team one has played');
+  const theirs = a.history[0].id;
+
+  assert.equal((await call('/api/history/' + theirs + '/quiz', { as: 'ali' })).status, 200);
+  assert.equal((await call('/api/history/' + theirs + '/quiz', { as: 'aliB' })).status, 404,
+    'the id is real, but not theirs');
+});
+
+test('media cannot be borrowed from another team', async () => {
+  const mine = await upload('aliB');
+  assert.ok(mine, 'team two can upload for its own quiz');
+
+  // Attaching it to team one's quiz must not stick. (Ali took the duty back
+  // in the test above, so this write is allowed to land.)
+  const saved = await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Borrowed',
+      questions: [{ id: 'q1', text: '?', options: ['a', 'b'], correct: 0, media: mine }],
+      tieBreaker: { text: 'n?', unit: '', answer: 1 } } }
+  });
+  assert.equal(saved.status, 200);
+  const back = await stateAs('ali');
+  assert.equal(back.upcoming.quiz.questions[0].media, null, 'stripped on the way in');
+
+  // And it cannot simply be read over HTTP either.
+  const url = '/media/' + mine.id + '.jpg';
+  const asOwner = await fetch(BASE + url, { headers: { cookie: jar.aliB } });
+  assert.equal(asOwner.status, 200, 'its own team can see it');
+  const asOther = await fetch(BASE + url, { headers: { cookie: jar.ali } });
+  assert.equal(asOther.status, 404, 'nobody else can');
+  const signedOut = await fetch(BASE + url);
+  assert.equal(signedOut.status, 404, 'and neither can a stranger');
+});
+
+test('a quiz master cannot reach into the other team', async () => {
+  const b = await stateAs('aliB');
+  const victim = b.users.find((u) => u.name === 'Bo');
+
+  for (const [path, body] of [
+    ['/api/reset-password', { userId: victim.id }],
+    ['/api/admin/set-active', { userId: victim.id, active: false }],
+    ['/api/roles', { quizMasterId: victim.id }]
+  ]) {
+    const res = await call(path, { method: 'POST', body, as: 'ali' });
+    assert.ok(res.status >= 400, path + ' must refuse a stranger from another team');
+  }
+
+  // Team two is untouched by any of it.
+  const after = await stateAs('aliB');
+  assert.equal(after.users.find((u) => u.id === victim.id).active, true);
 });
