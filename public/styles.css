@@ -937,6 +937,7 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .s-q.q-xlong { font-size: clamp(20px, min(2.5vw, 3.75vh), 38px); line-height: 1.2; }
 .slide.tight .s-answer { margin-top: clamp(16px, 2vh, 28px); padding: clamp(14px,min(1.8vw, 2.7vh),26px) clamp(18px,min(2.2vw, 3.3vh),32px); }
 .slide.tight .s-answer .val { font-size: clamp(22px, min(2.8vw, 4.2vh), 44px); }
+.slide.tight .s-media { flex: 0 1 auto; }
 .slide.tight .s-media img, .slide.tight .s-media video { max-height: 22vh; }
 
 .next-grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(18px,min(2.4vw, 3.6vh),34px);
@@ -1226,16 +1227,30 @@ audio.media-player { height: 44px; }
 
 /* Media on the big screen */
 
+/* The picture takes whatever height the question and the answers leave, rather
+   than a fixed slice of the screen. A capped percentage meant a slide with four
+   short answers showed a small picture above a band of empty space - the space
+   was there, nothing was using it. */
 .s-media {
   margin-top: clamp(18px, 2.6vh, 34px);
-  display: flex; justify-content: center; min-height: 0;
+  display: flex; justify-content: center; align-items: center;
+  flex: 1 1 auto; min-height: 0;
 }
 .s-media img, .s-media video {
-  max-width: 100%; max-height: 46vh;
+  max-width: 100%; max-height: 100%;
+  width: auto; height: auto;
   object-fit: contain; border-radius: var(--r-lg);
   background: var(--surface-2);
 }
-.s-media.audio { justify-content: stretch; }
+/* A slide with a picture fills the frame; the auto margins that centre a
+   text-only slide would fight the picture for the same space. */
+.slide.has-media > :first-child, .slide.has-media > :last-child {
+  margin-top: 0; margin-bottom: 0;
+}
+.slide.has-media { justify-content: flex-start; }
+/* Sound is a bar, not a picture - it should not stretch to fill the slide. */
+.s-media.audio { flex: 0 0 auto; }
+.s-media.audio { justify-content: stretch; align-items: stretch; }
 .s-media audio { width: 100%; max-width: 760px; height: 54px; }
 
 /* With media the question text gives up some room so the options still fit. */
@@ -1430,7 +1445,8 @@ audio.media-player { height: 44px; }
   .s-opt .k { width: 30px; height: 30px; font-size: 14px; }
   .s-answer { margin-top: 14px; padding: 12px 14px; }
   .s-answer .val { font-size: 19px; }
-  .s-media img, .s-media video { max-height: 26vh; }
+  .s-media { flex: 0 1 auto; }
+  .s-media img, .s-media video { max-height: 30vh; }
 
   /* The lobby is the worst offender: a QR sized for a projector, plus the code,
      pushed the Start button off the bottom of the screen. */
