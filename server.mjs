@@ -257,11 +257,37 @@ When asked to write a whole quiz, "all the questions", or a batch of questions, 
 }
 Write exactly 10 questions unless told otherwise. Each question needs 2 to 6 short options, one correct 0-based "correct" index, and a short optional "note" with a fun fact or explanation. The tiebreaker's "answer" must be a plain number.
 
+Move the right answer around. The example above happens to show 0, and it is very easy to leave every question that way - a quiz where the answer is always A is no quiz at all. Spread them across the whole range, so roughly a quarter land on each position in a four-option question.
+
 About pictures and sound: you cannot make, find or attach a file - only the quiz master can, from their own machine. What you can do is say what each slot needs, and they will go and get it. "mediaHint" describes a file for the question itself; "optionHints" describes one per option, in the same order, empty string where nothing is needed. Keep each hint to a few words naming the file plainly - "a lion roaring, a few seconds" or "photograph of a badger". Only fill them in when the request actually calls for media, and leave them out entirely otherwise.
 
 So for "guess the animal from the sound, with pictures to choose from", each question gets a "mediaHint" of the animal's call and four "optionHints" naming a photograph of each candidate animal, while "options" holds the animal names as the labels. Say plainly in your one-sentence reply that the files are theirs to add.
 
 Match whatever tone is asked for - funny, serious, whatever. You have no way to check the web right now, so get facts as right as you can from what you already know, and if you are genuinely unsure of one, say so plainly in your one-sentence reply rather than presenting a guess as certain.`;
+
+/* Shuffle each question's options and follow the right answer to its new
+   place. Belt and braces on top of asking the model nicely: left alone, an LLM
+   will happily mark option A correct ten times out of ten, because that is
+   what the example in its instructions shows. */
+function spreadAnswers(quiz) {
+  if (!quiz || !Array.isArray(quiz.questions)) return quiz;
+  for (const q of quiz.questions) {
+    if (!Array.isArray(q.options) || !Number.isInteger(q.correct)) continue;
+    if (q.correct < 0 || q.correct >= q.options.length) continue;
+    const right = q.options[q.correct];
+    const hints = Array.isArray(q.optionHints) ? q.optionHints.slice() : null;
+    // Fisher-Yates, carrying any per-option hint along with its option.
+    const order = q.options.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = randomBytes(1)[0] % (i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    q.options = order.map((i) => q.options[i]);
+    if (hints) q.optionHints = order.map((i) => hints[i] || '');
+    q.correct = q.options.indexOf(right);
+  }
+  return quiz;
+}
 
 function extractQuiz(text) {
   const m = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -270,7 +296,7 @@ function extractQuiz(text) {
     const parsed = JSON.parse(m[1]);
     if (parsed && Array.isArray(parsed.questions) && parsed.questions.length) {
       const cleaned = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
-      return { reply: cleaned || 'Here you go - take a look below.', quiz: parsed };
+      return { reply: cleaned || 'Here you go - take a look below.', quiz: spreadAnswers(parsed) };
     }
   } catch {}
   return { reply: text || '(no reply)', quiz: null };

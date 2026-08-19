@@ -872,19 +872,35 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .tie-chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .tc-grid { stroke: var(--line-soft); stroke-width: 1; }
 .tc-tick { fill: var(--ink-3); font-size: 19px; font-variant-numeric: tabular-nums; }
-.tc-bar { fill: var(--surface-2); stroke: var(--line-soft); stroke-width: 1; }
-/* Nearest guess wins the tiebreaker, so it is the one to pick out. */
-.tc-bar.best { fill: var(--good); stroke: var(--good); }
-.tc-val { fill: var(--ink-2); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.tc-name { fill: var(--ink-3); font-size: 20px; font-weight: 500; }
-/* Dashed, because it is the reference and not another bar. */
+
+/* Dashed, because it is the answer and not another guess. */
 .tc-line { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 10 8; }
 .tc-line-lbl { fill: var(--accent); font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* The gap between a bubble and the line is the whole story, so it is drawn. */
+.tc-thread { stroke: var(--line); stroke-width: 2; stroke-dasharray: 3 5; }
+
+.tc-bub {
+  fill: var(--surface-2); stroke: var(--line); stroke-width: 2;
+}
+/* Nearest guess wins the tiebreaker, so it is the one to pick out. */
+.tc-bub.best { fill: var(--good-soft); stroke: var(--good); stroke-width: 3; }
+.tc-bub-nm {
+  fill: var(--ink-2); font-size: 19px; font-weight: 600;
+  pointer-events: none;
+}
+.tc-bub-val {
+  fill: var(--ink); font-size: 21px; font-weight: 700;
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.tc-bub-nm.best { fill: var(--good); }
+.tc-bub-val.best { fill: var(--good); }
 
 /* The phone gets the same drawing in a smaller box, so the type has to come
    up to stay readable - it is scaled by the viewBox, not by pixels. */
 .play .tc-tick { font-size: 26px; }
-.play .tc-val, .play .tc-name { font-size: 27px; }
+.play .tc-bub-nm { font-size: 26px; }
+.play .tc-bub-val { font-size: 29px; }
 .play .tc-line-lbl { font-size: 28px; }
 
 /* Who guessed what on the tiebreaker, once the answer is up */
@@ -967,7 +983,9 @@ body.bare .app { padding: 0; max-width: none; }
 
 /* LIVE: the big screen */
 
-body.playing { overflow: hidden; }
+/* Only the big screen is locked. A player's own screen scrolls like any page -
+   with this on the body, anything past the first viewport was unreachable. */
+body.playing.presenting { overflow: hidden; }
 body.playing .app { padding: 0; max-width: none; }
 
 .stage-live {
@@ -1076,7 +1094,9 @@ body.playing .app { padding: 0; max-width: none; }
 /* LIVE: the phone */
 
 .play {
-  min-height: 100vh; min-height: 100dvh;
+  /* dvh, not vh: on a phone vh includes the browser chrome, so the card starts
+     taller than the screen and pushes its own header out of sight. */
+  min-height: 100dvh;
   padding: 22px 18px calc(28px + env(safe-area-inset-bottom));
   max-width: 620px; margin: 0 auto;
   display: flex; flex-direction: column;
@@ -1369,3 +1389,6 @@ audio.media-player { height: 44px; }
 }
 .btn.chip:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .btn.chip:active { transform: scale(.97); }
+
+/* A redraw that is not a new slide keeps what is on screen exactly where it is. */
+.slide.still > * { animation: none; }

@@ -42,6 +42,10 @@
     // A running quiz takes over every screen. Nobody has to find a "join" button.
     if (QC.live.isRunning()) {
       document.body.classList.add('playing');
+      /* The big screen is a fixed slide and must not scroll. A player's own
+         screen is an ordinary page and has to, or anything below the fold is
+         unreachable on a phone. */
+      document.body.classList.toggle('presenting', QC.isMaster());
       nav.hidden = true;
       foot.hidden = true;
       try {
@@ -53,7 +57,7 @@
       return;
     }
 
-    document.body.classList.remove('playing');
+    document.body.classList.remove('playing', 'presenting');
     QC.route = currentRoute();
 
     try {
