@@ -1,0 +1,20 @@
+{
+  // Only for deploying this as a Worker:
+  //     npx wrangler deploy --config wrangler.worker.jsonc
+  //
+  // Named so that `wrangler pages deploy` does not pick it up. Pages reads any
+  // wrangler config it finds, decides a Worker config is not valid for Pages,
+  // and either warns or fails outright - which is what broke the deploy action.
+  //
+  // There is no build step, because the app has no dependencies and needs none.
+  "name": "quizzy",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-01",
+
+  // public/ is the app itself. ORIGIN (the VM's address) is set in the
+  // dashboard rather than here, so the repository does not carry it.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  }
+}

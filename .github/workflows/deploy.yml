@@ -26,4 +26,6 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           # public/ is the app. functions/ is picked up automatically and is
           # what proxies /api and /media through to the VM.
-          command: pages deploy public --project-name=quizmys --branch=main
+          # --commit-dirty because the checkout carries no git metadata that
+          # wrangler recognises, and it refuses to publish without it.
+          command: pages deploy public --project-name=quizmys --branch=main --commit-dirty=true
