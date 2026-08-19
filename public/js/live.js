@@ -112,13 +112,12 @@
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  /* Everyone's guess as a bubble, floating above or below the answer. The
-     tiebreaker is decided by distance, so distance is what the picture should
-     show: the line is the truth and how far a bubble sits from it is how far
-     out they were. Bars made you compare heights and work it out.
+  /* Everyone's guess as a bar, with the real answer ruled across it. Who was
+     nearest is the whole point of the tiebreaker and a column of numbers makes
+     you work it out; the distance to the line is the answer at a glance.
 
-     SVG so it scales from a phone to a projector without going soft, and
-     coloured by class so it follows the theme. */
+     Drawn as SVG so it scales from a phone to a projector without going soft,
+     and coloured by class so it follows the theme. */
   function tieChart(rows, unit, answer) {
     var got = rows.filter(function (r) { return r.guess !== null; });
     if (!got.length) return null;
@@ -127,47 +126,46 @@
     var vals = got.map(function (r) { return Number(r.guess); }).concat([ans]);
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
     if (lo === hi) { lo -= 1; hi += 1; }             // everyone said the same
-    var pad = (hi - lo) * 0.2;
+    var pad = (hi - lo) * 0.12;
     var d0 = lo - pad, d1 = hi + pad;
 
-    var W = 1000, H = 460, L = 78, R = 30, T = 34, B = 44;
+    var W = 1000, H = 460, L = 74, R = 26, T = 30, B = 78;
     var plotW = W - L - R, base = H - B, plotH = base - T;
     var y = function (v) { return base - ((v - d0) / (d1 - d0)) * plotH; };
 
     var slot = plotW / got.length;
-    var rad = Math.min(46, Math.max(20, slot * 0.32));
+    var barW = Math.min(96, slot * 0.6);
     var best = Math.min.apply(null, got.map(function (r) { return r.diff; }));
 
     var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="tie-chart-svg" ' +
-            'role="img" aria-label="Tiebreaker guesses around the answer">';
+            'role="img" aria-label="Everyone\'s tiebreaker guesses against the answer">';
 
-    // Scale down the left, so the distances mean something.
+    // Scale down the left, so the bar heights mean something.
     for (var t = 0; t <= 4; t++) {
       var v = d0 + (d1 - d0) * (t / 4), yy = y(v);
       s += '<line class="tc-grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + yy + '" y2="' + yy + '"/>';
-      s += '<text class="tc-tick" x="' + (L - 14) + '" y="' + (yy + 6) + '" text-anchor="end">' + esc(num(v)) + '</text>';
+      s += '<text class="tc-tick" x="' + (L - 12) + '" y="' + (yy + 6) + '" text-anchor="end">' + esc(num(v)) + '</text>';
     }
-
-    // The answer, ruled across everything. Drawn before the bubbles so they sit
-    // on top of it rather than under.
-    var ay = y(ans);
-    s += '<line class="tc-line" x1="' + L + '" x2="' + (W - R) + '" y1="' + ay + '" y2="' + ay + '"/>';
-    s += '<text class="tc-line-lbl" x="' + (W - R) + '" y="' + (ay - 14) + '" text-anchor="end">' +
-         esc(num(ans) + (unit ? ' ' + unit : '')) + '</text>';
 
     got.forEach(function (r, i) {
       var cx = L + slot * (i + 0.5);
       var gy = y(Number(r.guess));
-      var closest = r.diff === best;
-      // A thread back to the line: the gap is the whole point.
-      s += '<line class="tc-thread" x1="' + cx + '" x2="' + cx + '" y1="' + ay + '" y2="' + gy + '"/>';
-      s += '<circle class="tc-bub' + (closest ? ' best' : '') + '" cx="' + cx + '" cy="' + gy + '" r="' + rad + '"/>';
-      // First name only: surnames turn this into a wall of text.
-      s += '<text class="tc-bub-nm' + (closest ? ' best' : '') + '" x="' + cx + '" y="' + (gy - 2) + '" text-anchor="middle">' +
-           esc(String(r.name).split(/\s+/)[0]) + '</text>';
-      s += '<text class="tc-bub-val' + (closest ? ' best' : '') + '" x="' + cx + '" y="' + (gy + 18) + '" text-anchor="middle">' +
+      var top = Math.min(gy, base), h = Math.max(2, Math.abs(base - gy));
+      var cls = 'tc-bar' + (r.diff === best ? ' best' : '');
+      s += '<rect class="' + cls + '" x="' + (cx - barW / 2) + '" y="' + top +
+           '" width="' + barW + '" height="' + h + '" rx="6"/>';
+      s += '<text class="tc-val" x="' + cx + '" y="' + (top - 10) + '" text-anchor="middle">' +
            esc(num(r.guess)) + '</text>';
+      // First name only: surnames turn the axis into a wall of text.
+      s += '<text class="tc-name" x="' + cx + '" y="' + (base + 30) + '" text-anchor="middle">' +
+           esc(String(r.name).split(/\s+/)[0]) + '</text>';
     });
+
+    // The answer itself, ruled across everything.
+    var ay = y(ans);
+    s += '<line class="tc-line" x1="' + L + '" x2="' + (W - R) + '" y1="' + ay + '" y2="' + ay + '"/>';
+    s += '<text class="tc-line-lbl" x="' + (W - R) + '" y="' + (ay - 12) + '" text-anchor="end">' +
+         esc(num(ans) + (unit ? ' ' + unit : '')) + '</text>';
 
     s += '</svg>';
     return el('div.tie-chart', { html: s });
@@ -202,6 +200,7 @@
   function presenter() {
     var L = live();
     var body;
+    tally = null;               // a fresh slide invalidates the old handles
     var key = L.phase + ':' + L.index;
     var same = key === lastSlide;
     lastSlide = key;
@@ -291,15 +290,18 @@
     ]);
   }
 
+  /* Held on to so the counter can be nudged without rebuilding the slide.
+     Cleared whenever a slide is drawn, so a stale one is never written to. */
+  var tally = null;
+
   function answerTally(L) {
     var done = L.answeredCount, total = L.playerCount;
     var allIn = total > 0 && done === total;
-    return el('div.tally' + (allIn ? '.all-in' : ''), [
-      el('div.tally-bar', [
-        el('i', { style: { width: (total ? (done / total) * 100 : 0) + '%' } })
-      ]),
-      el('div.tally-text', { text: allIn ? 'Everyone has answered' : done + ' of ' + total + ' answered' })
-    ]);
+    var fill = el('i', { style: { width: (total ? (done / total) * 100 : 0) + '%' } });
+    var text = el('div.tally-text', { text: allIn ? 'Everyone has answered' : done + ' of ' + total + ' answered' });
+    var box = el('div.tally' + (allIn ? '.all-in' : ''), [el('div.tally-bar', [fill]), text]);
+    tally = { box: box, fill: fill, text: text, kind: 'answers' };
+    return box;
   }
 
   function pTie(reveal) {
@@ -322,10 +324,14 @@
           ])
         : el('div', [
             el('p.s-sub', { text: 'Everyone type in a number. It only matters if two people finish level.' }),
-            el('div.tally' + (L.tieCount === L.playerCount && L.playerCount ? '.all-in' : ''), [
-              el('div.tally-bar', [el('i', { style: { width: (L.playerCount ? (L.tieCount / L.playerCount) * 100 : 0) + '%' } })]),
-              el('div.tally-text', { text: L.tieCount + ' of ' + L.playerCount + ' guessed' })
-            ])
+            (function () {
+              var allIn = L.tieCount === L.playerCount && L.playerCount;
+              var fill = el('i', { style: { width: (L.playerCount ? (L.tieCount / L.playerCount) * 100 : 0) + '%' } });
+              var text = el('div.tally-text', { text: L.tieCount + ' of ' + L.playerCount + ' guessed' });
+              var box = el('div.tally' + (allIn ? '.all-in' : ''), [el('div.tally-bar', [fill]), text]);
+              tally = { box: box, fill: fill, text: text, kind: 'tie' };
+              return box;
+            })()
           ])
     ]);
   }

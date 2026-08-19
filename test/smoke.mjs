@@ -826,3 +826,28 @@ test('the winner is never handed next week', async () => {
   assert.notEqual(after.upcoming.topicPickerId, winner, 'the winner does not pick the topic');
   assert.notEqual(after.upcoming.quizMasterId, winner, 'nor write the quiz');
 });
+
+/* Running the install is a different job from running a team. Somebody handed
+   a code for a new team must not be able to take the whole place. */
+test('a new team cannot claim the site', async () => {
+  const owner = await stateAs('ali');
+  assert.equal(owner.siteAdmin, true, 'Ali owns the install');
+
+  const made = await call('/api/teams', {
+    method: 'POST', body: { name: 'Latecomers', code: 'late-code' }, as: 'ali'
+  });
+  assert.equal(made.status, 200);
+
+  // First person on that team claims it - they get the team, not the install.
+  await signIn('Newbie', 'secret1', 'late-code', 'late');
+  const claim = await call('/api/admin/claim', { method: 'POST', as: 'late' });
+  assert.equal(claim.status, 200, 'they do become their own quiz master');
+
+  const theirs = await stateAs('late');
+  assert.equal(theirs.adminId, theirs.me, 'quiz master of their team');
+  assert.equal(theirs.siteAdmin, false, 'but not of the install');
+
+  assert.equal((await call('/api/teams', { as: 'late' })).status, 403,
+    'and still cannot see the other teams');
+  assert.equal((await stateAs('ali')).siteAdmin, true, 'Ali still owns it');
+});

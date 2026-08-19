@@ -683,11 +683,18 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 
 .slide {
   flex: 1; min-height: 0;
-  display: flex; flex-direction: column; justify-content: center;
+  display: flex; flex-direction: column;
   padding: var(--pad);
   max-width: 1500px; width: 100%; margin: 0 auto;
   overflow-y: auto;
 }
+/* Centred vertically, but by margin rather than justify-content. With
+   justify-content: center an overflowing slide has its top clipped off and no
+   scroll can reach it - which is exactly what running the quiz from a phone
+   looked like. Auto margins collapse when there is no room, so the content
+   simply starts at the top and scrolls. */
+.slide > :first-child { margin-top: auto; }
+.slide > :last-child { margin-bottom: auto; }
 .slide > * { animation: slideIn .5s var(--ease-out) both; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(20px) } }
 
@@ -872,35 +879,19 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .tie-chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .tc-grid { stroke: var(--line-soft); stroke-width: 1; }
 .tc-tick { fill: var(--ink-3); font-size: 19px; font-variant-numeric: tabular-nums; }
-
-/* Dashed, because it is the answer and not another guess. */
+.tc-bar { fill: var(--surface-2); stroke: var(--line-soft); stroke-width: 1; }
+/* Nearest guess wins the tiebreaker, so it is the one to pick out. */
+.tc-bar.best { fill: var(--good); stroke: var(--good); }
+.tc-val { fill: var(--ink-2); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tc-name { fill: var(--ink-3); font-size: 20px; font-weight: 500; }
+/* Dashed, because it is the reference and not another bar. */
 .tc-line { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 10 8; }
 .tc-line-lbl { fill: var(--accent); font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
-
-/* The gap between a bubble and the line is the whole story, so it is drawn. */
-.tc-thread { stroke: var(--line); stroke-width: 2; stroke-dasharray: 3 5; }
-
-.tc-bub {
-  fill: var(--surface-2); stroke: var(--line); stroke-width: 2;
-}
-/* Nearest guess wins the tiebreaker, so it is the one to pick out. */
-.tc-bub.best { fill: var(--good-soft); stroke: var(--good); stroke-width: 3; }
-.tc-bub-nm {
-  fill: var(--ink-2); font-size: 19px; font-weight: 600;
-  pointer-events: none;
-}
-.tc-bub-val {
-  fill: var(--ink); font-size: 21px; font-weight: 700;
-  font-variant-numeric: tabular-nums; pointer-events: none;
-}
-.tc-bub-nm.best { fill: var(--good); }
-.tc-bub-val.best { fill: var(--good); }
 
 /* The phone gets the same drawing in a smaller box, so the type has to come
    up to stay readable - it is scaled by the viewBox, not by pixels. */
 .play .tc-tick { font-size: 26px; }
-.play .tc-bub-nm { font-size: 26px; }
-.play .tc-bub-val { font-size: 29px; }
+.play .tc-val, .play .tc-name { font-size: 27px; }
 .play .tc-line-lbl { font-size: 28px; }
 
 /* Who guessed what on the tiebreaker, once the answer is up */
@@ -1392,3 +1383,22 @@ audio.media-player { height: 44px; }
 
 /* A redraw that is not a new slide keeps what is on screen exactly where it is. */
 .slide.still > * { animation: none; }
+
+/* Presenting from a phone rather than a projector. The slide keeps its shape
+   but stops trying to fill a wall, and scrolls when the question, the options
+   and the answer will not fit at once. */
+@media (max-width: 700px) {
+  .stage-live { --pad: 16px; }
+  .slide { justify-content: flex-start; }
+  .slide > :first-child, .slide > :last-child { margin-top: 0; margin-bottom: 0; }
+  .s-q { font-size: 22px; line-height: 1.25; }
+  .s-title { font-size: 28px; }
+  .s-sub { font-size: 15px; }
+  .s-kicker { font-size: 12px; margin-bottom: 10px; }
+  .s-opts { gap: 8px; margin-top: 14px; }
+  .s-opt { font-size: 16px; padding: 11px 14px; gap: 10px; }
+  .s-opt .k { width: 30px; height: 30px; font-size: 14px; }
+  .s-answer { margin-top: 14px; padding: 12px 14px; }
+  .s-answer .val { font-size: 19px; }
+  .s-media img, .s-media video { max-height: 26vh; }
+}

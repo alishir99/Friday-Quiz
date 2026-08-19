@@ -120,7 +120,33 @@
     var editing = QC.route === 'build' && was && state && was.me === state.me;
     if (sheetOpen) return;
     if (editing && !bigChange(was, state)) return;
+
+    /* A push for somebody else's answer changes a counter and nothing else.
+       Rebuilding the whole view for that is what made the big screen flicker,
+       so nudge the number instead and leave the slide alone. */
+    if (onlyCountsMoved(was, state)) {
+      if (QC.isMaster() && QC.live.patchCounts()) return;
+      if (!QC.isMaster()) return;      // players show no counter at all
+    }
     QC.render();
+  }
+
+  /* True when the game is on the same slide, showing the same thing, and the
+     only difference is how many people have answered so far. */
+  function onlyCountsMoved(a, b) {
+    if (!a || !b || !a.live || !b.live) return false;
+    var x = a.live, y = b.live;
+    if (x.phase !== y.phase || x.index !== y.index) return false;
+    if (x.reveal !== y.reveal || x.committed !== y.committed) return false;
+    // Anything about me changing has to redraw: my answer, my score, my guess.
+    if (JSON.stringify(x.myAnswers) !== JSON.stringify(y.myAnswers)) return false;
+    if (x.myTieGuess !== y.myTieGuess) return false;
+    if (JSON.stringify(x.myScore) !== JSON.stringify(y.myScore)) return false;
+    // A roster change shows up as faces in the lobby, so that redraws too.
+    if ((x.players || []).length !== (y.players || []).length) return false;
+    if (!!x.ranking !== !!y.ranking) return false;
+    if (x.ranking && JSON.stringify(x.ranking) !== JSON.stringify(y.ranking)) return false;
+    return true;
   }
 
   /* While the quiz master is typing questions we only redraw when something

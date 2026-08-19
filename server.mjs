@@ -1075,10 +1075,13 @@ async function api(req, res, path) {
     if (!requireUser()) return;
     if (isGuest(team, me)) return json(res, 403, { error: 'Guests cannot be admin' });
     if (team.masterId) return json(res, 409, { error: 'There is already an admin' });
-    // Quiz master of this team. The very first claim on a fresh install also
-    // takes the install itself - somebody has to be able to make more teams.
     team.masterId = me;
-    if (!db.adminId) db.adminId = me;
+    /* Quiz master of this team, and that is usually all. Running the install
+       is a different job, and a stranger who signs up to a team they were
+       given a code for must not be able to take it. Only the very first claim
+       on a brand new install, when there is one team and nobody in charge of
+       anything, also takes the install itself. */
+    if (!db.adminId && teamList().length === 1) db.adminId = me;
     await persist(); broadcast(team);
     return json(res, 200, { ok: true });
   }
