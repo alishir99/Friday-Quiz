@@ -1402,3 +1402,9 @@ audio.media-player { height: 44px; }
   .s-answer .val { font-size: 19px; }
   .s-media img, .s-media video { max-height: 26vh; }
 }
+
+/* The topic on its own, before the first question. Bigger than a question,
+   because it is the only thing on the screen and the point of the moment. */
+.topic-slide { text-align: center; }
+.topic-slide .s-title { font-size: clamp(38px, min(7vw, 10.5vh), 116px); margin-top: 8px; }
+@media (max-width: 700px) { .topic-slide .s-title { font-size: 32px; } }

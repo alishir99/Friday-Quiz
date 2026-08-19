@@ -426,15 +426,18 @@ function quizReady(quiz) {
 /* live game phases. Two ways round the course, the quiz master's choice:
 
    'end'  (the pub way, and the default)
-     lobby → q0..q9 → tb → gap → a0..a9 → tba → board → roles
+     lobby → topic → q0..q9 → tb → gap → a0..a9 → tba → board → roles
      Nobody learns anything until the end, so a wrong answer early does not
      take the wind out of the room.
 
    'each' (the Kahoot way)
-     lobby → q0 → a0 → q1 → a1 → … → q9 → a9 → tb → tba → board → roles
+     lobby → topic → q0 → a0 → q1 → a1 → … → q9 → a9 → tb → tba → board → roles
      Answer straight after each question, while people still remember it. */
 
-const PHASES = ['lobby', 'q', 'tb', 'gap', 'a', 'tba', 'board', 'roles'];
+/* 'topic' is a slide of its own between the lobby and the first question: the
+   subject is a surprise until the quiz actually starts, so it deserves a
+   moment rather than being glimpsed in the corner of question one. */
+const PHASES = ['lobby', 'topic', 'q', 'tb', 'gap', 'a', 'tba', 'board', 'roles'];
 const REVEAL_MODES = ['end', 'each'];
 const revealMode = (live) => (live && live.reveal === 'each') ? 'each' : 'end';
 
@@ -444,7 +447,8 @@ function advance(live, qCount) {
   const { phase, index } = live;
   const each = revealMode(live) === 'each';
 
-  if (phase === 'lobby') { live.phase = 'q'; live.index = 0; return; }
+  if (phase === 'lobby') { live.phase = 'topic'; live.index = 0; return; }
+  if (phase === 'topic') { live.phase = 'q'; live.index = 0; return; }
   if (phase === 'q') {
     if (each) { live.phase = 'a'; return; }              // answer it now
     if (index < qCount - 1) live.index++;
@@ -472,13 +476,14 @@ function back(live, qCount) {
   const { phase, index } = live;
   const each = revealMode(live) === 'each';
 
+  if (phase === 'topic') { live.phase = 'lobby'; return; }
   if (phase === 'q') {
     if (each) {
       // The step before question n is the answer to n-1.
-      if (index > 0) { live.phase = 'a'; live.index--; } else live.phase = 'lobby';
+      if (index > 0) { live.phase = 'a'; live.index--; } else live.phase = 'topic';
       return;
     }
-    if (index > 0) live.index--; else live.phase = 'lobby';
+    if (index > 0) live.index--; else live.phase = 'topic';
     return;
   }
   if (phase === 'tb') {

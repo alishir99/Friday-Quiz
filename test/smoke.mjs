@@ -58,6 +58,19 @@ async function upload(as, bytes = 'not really a jpeg') {
 }
 const nameOf = (state, id) => (state.users.find((u) => u.id === id) || {}).name;
 
+/* Step the game on until it reaches a named phase. Tests used to count clicks,
+   which meant adding a slide to the running order broke nine of them at once
+   and told you nothing about what had actually changed. */
+async function advanceTo(phase, as = 'ali', limit = 40) {
+  for (let i = 0; i < limit; i++) {
+    const s = await stateAs(as);
+    if (!s.live) throw new Error('no game is running');
+    if (s.live.phase === phase) return s;
+    await call('/api/live/advance', { method: 'POST', as });
+  }
+  throw new Error('never reached phase ' + phase);
+}
+
 before(async () => {
   dataDir = await mkdtemp(join(tmpdir(), 'fq-smoke-'));
   server = spawn(process.execPath, ['server.mjs'], {
@@ -166,6 +179,37 @@ test('a guest cannot be handed next week by hand', async () => {
 
 /* The lobby slide is what sits on a shared screen while people file in, so
    the topic has to stay off the wire until the quiz actually starts. */
+test('the topic gets a slide of its own before question one', async () => {
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Owls',
+      questions: [{ id: 'q1', text: '?', options: ['a', 'b'], correct: 0 }],
+      tieBreaker: { text: 'n?', unit: '', answer: 1 } } }
+  });
+  await call('/api/topic', { method: 'POST', body: { topic: 'Owls' }, as: 'ali' });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+
+  let seen = await stateAs('cal');
+  assert.equal(seen.live.phase, 'lobby');
+  assert.equal(seen.live.topic, '', 'still a secret while people file in');
+
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  seen = await stateAs('cal');
+  assert.equal(seen.live.phase, 'topic', 'a slide of its own, not straight to question one');
+  assert.equal(seen.live.topic, 'Owls', 'and this is where it is revealed');
+
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  assert.equal((await stateAs('cal')).live.phase, 'q', 'then the questions');
+
+  // And back again, so the quiz master can linger on it.
+  await call('/api/live/back', { method: 'POST', as: 'ali' });
+  assert.equal((await stateAs('ali')).live.phase, 'topic');
+  await call('/api/live/back', { method: 'POST', as: 'ali' });
+  assert.equal((await stateAs('ali')).live.phase, 'lobby');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});
+
 test('the topic stays hidden until the quiz starts', async () => {
   await call('/api/quiz', {
     method: 'PUT',
@@ -187,7 +231,7 @@ test('the topic stays hidden until the quiz starts', async () => {
   assert.equal(inLobby.upcoming.topic, '', 'and not on the upcoming card either');
   assert.equal(inLobby.upcoming.topicSet, true, 'though everyone can tell one was chosen');
 
-  await call('/api/live/advance', { method: 'POST', as: 'ali' });   // lobby -> question
+  await advanceTo('q');
 
   const started = await stateAs('cal');
   assert.equal(started.live.topic, 'British seaside towns', 'revealed once it starts');
@@ -270,7 +314,7 @@ test('per-question reveal shows one answer, not the whole quiz', async () => {
   assert.equal(notMaster.status, 403, 'and only the quiz master may flip it');
 
   await call('/api/live/start', { method: 'POST', as: 'ali' });
-  await call('/api/live/advance', { method: 'POST', as: 'ali' });        // lobby -> q0
+  await advanceTo('q');
 
   let seen = await stateAs('cal');
   assert.equal(seen.live.reveal, 'each');
@@ -305,7 +349,7 @@ test('per-question reveal shows one answer, not the whole quiz', async () => {
 
 test('holding answers to the end keeps every one of them back', async () => {
   await call('/api/live/start', { method: 'POST', as: 'ali' });
-  await call('/api/live/advance', { method: 'POST', as: 'ali' });        // lobby -> q0
+  await advanceTo('q');
   await call('/api/live/advance', { method: 'POST', as: 'ali' });        // q0 -> q1
 
   const seen = await stateAs('cal');
@@ -340,7 +384,7 @@ test('the running score never counts ahead of the reveal', async () => {
   await call('/api/live/start', { method: 'POST', as: 'ali' });
 
   // Bea answers all three correctly as they come up.
-  await call('/api/live/advance', { method: 'POST', as: 'ali' });          // q0
+  await advanceTo('q');
   await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });
 
   let seen = await stateAs('bea');
@@ -367,7 +411,7 @@ test('the running score never counts ahead of the reveal', async () => {
 
 test('holding answers to the end shows no score until the reveal', async () => {
   await call('/api/live/start', { method: 'POST', as: 'ali' });
-  await call('/api/live/advance', { method: 'POST', as: 'ali' });          // q0
+  await advanceTo('q');
   await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });
   await call('/api/live/advance', { method: 'POST', as: 'ali' });          // q1
   await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });
@@ -383,7 +427,7 @@ test('holding answers to the end shows no score until the reveal', async () => {
    climb would be a second bite at it. */
 test('the tiebreaker takes one guess each', async () => {
   await call('/api/live/start', { method: 'POST', as: 'ali' });
-  for (let i = 0; i < 4; i++) await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  await advanceTo('tb');
 
   let state = await stateAs('ali');
   assert.equal(state.live.phase, 'tb', 'at the tiebreaker');
@@ -438,7 +482,7 @@ test('each game starts with an empty room', async () => {
   //  what happens when somebody is already sitting there waiting.)
 
   // Answering is one way in; opening the app (SSE) is the other.
-  await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
   await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'bea' });
 
   const joined = await stateAs('ali');
@@ -463,7 +507,7 @@ test('a guest plays and scores, but never inherits the quiz', async () => {
     }
   });
   await call('/api/live/start', { method: 'POST', as: 'ali' });
-  await call('/api/live/advance', { method: 'POST', as: 'ali' });   // lobby -> question
+  await advanceTo('q');
 
   const wrong = await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'cal' });
   assert.equal(wrong.status, 200, 'a guest can answer');
@@ -475,7 +519,7 @@ test('a guest plays and scores, but never inherits the quiz', async () => {
   const override = await call('/api/live/roles', { method: 'POST', body: { quizMasterId: guestId }, as: 'ali' });
   assert.equal(override.status, 400);
 
-  for (let i = 0; i < 6; i++) await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  await advanceTo('board');
 
   const before_ = await stateAs('ali');
   const ranked = before_.live.ranking.map((r) => nameOf(before_, r.userId));
@@ -807,11 +851,11 @@ test('the winner is never handed next week', async () => {
       tieBreaker: { text: 'n?', unit: '', answer: 1 } } }
   });
   await call('/api/live/start', { method: 'POST', as: 'ali' });
-  await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
 
   await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });     // right
   await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'newbie' });  // wrong
-  for (let i = 0; i < 6; i++) await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  await advanceTo('board');
 
   const before = await stateAs('ali');
   const ranked = before.live.ranking.filter((r) => {

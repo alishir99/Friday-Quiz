@@ -423,6 +423,7 @@
     var last = L.index === L.questionCount - 1;
     var label = 'Next';
     if (L.phase === 'lobby') label = 'Start the quiz';
+    else if (L.phase === 'topic') label = 'First question';
     else if (L.phase === 'q') label = each ? 'Show the answer' : (last ? 'Tiebreaker' : 'Next');
     else if (L.phase === 'a' && each) label = last ? 'Tiebreaker' : 'Next question';
     else if (L.phase === 'tb') label = each ? 'Show the answer' : 'Show the answers';
@@ -455,25 +456,28 @@
     var n = 1;
 
     // Question and answer alternate, so there is no separate gap slide.
+    // Question and answer alternate, so there is no separate gap slide.
     if (L.reveal === 'each') {
-      var total = 2 * qc + 5;
-      if (L.phase === 'q') n = 2 + 2 * L.index;
-      else if (L.phase === 'a') n = 3 + 2 * L.index;
-      else if (L.phase === 'tb') n = 2 * qc + 2;
-      else if (L.phase === 'tba') n = 2 * qc + 3;
-      else if (L.phase === 'board') n = 2 * qc + 4;
-      else if (L.phase === 'roles') n = 2 * qc + 5;
+      var total = 2 * qc + 6;
+      if (L.phase === 'topic') n = 2;
+      else if (L.phase === 'q') n = 3 + 2 * L.index;
+      else if (L.phase === 'a') n = 4 + 2 * L.index;
+      else if (L.phase === 'tb') n = 2 * qc + 3;
+      else if (L.phase === 'tba') n = 2 * qc + 4;
+      else if (L.phase === 'board') n = 2 * qc + 5;
+      else if (L.phase === 'roles') n = 2 * qc + 6;
       return { text: n + ' / ' + total, pct: (n / total) * 100 };
     }
 
-    var totalEnd = 2 * qc + 6;                                 // qc=10 -> 26, as before
-    if (L.phase === 'q') n = 2 + L.index;
-    else if (L.phase === 'tb') n = qc + 2;
-    else if (L.phase === 'gap') n = qc + 3;
-    else if (L.phase === 'a') n = qc + 4 + L.index;
-    else if (L.phase === 'tba') n = 2 * qc + 4;
-    else if (L.phase === 'board') n = 2 * qc + 5;
-    else if (L.phase === 'roles') n = 2 * qc + 6;
+    var totalEnd = 2 * qc + 7;
+    if (L.phase === 'topic') n = 2;
+    else if (L.phase === 'q') n = 3 + L.index;
+    else if (L.phase === 'tb') n = qc + 3;
+    else if (L.phase === 'gap') n = qc + 4;
+    else if (L.phase === 'a') n = qc + 5 + L.index;
+    else if (L.phase === 'tba') n = 2 * qc + 5;
+    else if (L.phase === 'board') n = 2 * qc + 6;
+    else if (L.phase === 'roles') n = 2 * qc + 7;
     return { text: n + ' / ' + totalEnd, pct: (n / totalEnd) * 100 };
   }
 
@@ -484,6 +488,7 @@
     switch (L.phase) {
       case 'lobby': return waitCard('Waiting to start',
         QC.name(live().quizMasterId) + ' is about to begin. Keep this page open.');
+      case 'topic': return plTopic();
       case 'q':     return plQuestion();
       case 'tb':    return plTie();
       case 'gap':   return waitCard('Here come the answers', 'Look at the big screen.');
@@ -502,6 +507,15 @@
         el('h2', { text: title }),
         el('p.muted', { text: sub })
       ])
+    ]);
+  }
+
+  function plTopic() {
+    var L = live();
+    return el('div.play', [
+      el('div.play-head', [el('span.play-step', { text: 'Tonight’s topic' })]),
+      el('h2.play-q', { text: L.topic || 'Anything goes' }),
+      el('p.play-foot', { text: L.questionCount + ' questions and a tiebreaker. Here we go.' })
     ]);
   }
 
