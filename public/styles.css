@@ -722,11 +722,20 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
   margin-top: clamp(28px, 4.4vh, 64px);
 }
 /* Three or fewer read better as full-width rows on a big screen. */
-.s-opts.single { grid-template-columns: 1fr; }
-/* With an odd number in two columns, let the last one fill the row
-   rather than leaving a hole. */
-.s-opts:not(.single) > .s-opt:last-child:nth-child(odd) { grid-column: 1 / -1; }
-@media (max-width: 900px) { .s-opts { grid-template-columns: 1fr; } }
+/* Laid out by what is in them, not how many there are. A row of years should
+   not be four full-width bars with an ocean of space in each. */
+.s-opts.opts-tight { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
+.s-opts.opts-mid   { grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
+.s-opts.opts-wide  { grid-template-columns: 1fr; }
+.s-opts.opts-pics  { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+
+/* Short answers can afford to be large; a phrase has to give way. */
+.s-opts.opts-tight > .s-opt { font-size: clamp(22px, min(3vw, 4.5vh), 46px); justify-content: center; }
+.s-opts.opts-wide  > .s-opt { font-size: clamp(17px, min(1.9vw, 2.85vh), 30px); }
+/* With an odd number in a two-column run, let the last one fill the row rather
+   than leaving a hole beside it. Only where the answers are wordy - a lone year
+   stretched across the full width looks stranded, not tidy. */
+.s-opts.opts-mid > .s-opt:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .s-opt {
   display: flex; align-items: center; gap: clamp(14px, min(1.5vw, 2.25vh), 22px);
   background: var(--surface-2); border: 2px solid transparent;
@@ -921,6 +930,8 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .tie-board.big .tie-flag { font-size: clamp(12px, min(1.1vw, 1.65vh), 18px); }
 /* The guess list is tall, so the question above it gives up some room. */
 .slide.tight .s-q { font-size: clamp(22px, min(2.6vw, 3.9vh), 40px); }
+.s-q.q-long  { font-size: clamp(24px, min(3.2vw, 4.8vh), 50px); }
+.s-q.q-xlong { font-size: clamp(20px, min(2.5vw, 3.75vh), 38px); line-height: 1.2; }
 .slide.tight .s-answer { margin-top: clamp(16px, 2vh, 28px); padding: clamp(14px,min(1.8vw, 2.7vh),26px) clamp(18px,min(2.2vw, 3.3vh),32px); }
 .slide.tight .s-answer .val { font-size: clamp(22px, min(2.8vw, 4.2vh), 44px); }
 .slide.tight .s-media img, .slide.tight .s-media video { max-height: 22vh; }
@@ -1455,3 +1466,16 @@ audio.media-player { height: 44px; }
   font-size: clamp(28px, 7vw, 40px); font-weight: 650;
   letter-spacing: -.025em; line-height: 1.15;
 }
+
+/* Same idea on a player's own screen: short answers pair up two to a row
+   instead of four lonely full-width buttons. */
+.play-opts.opts-tight {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.play-opts.opts-tight .play-opt { justify-content: center; }
+.play-opts.opts-tight .play-opt .t { flex: 0 1 auto; }
+.play-opts.opts-pics {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.play-q.q-long  { font-size: clamp(20px, 4.8vw, 27px); }
+.play-q.q-xlong { font-size: clamp(18px, 4.2vw, 23px); line-height: 1.25; }

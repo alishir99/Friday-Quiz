@@ -275,18 +275,42 @@
     ]);
   }
 
+  /* How wide the answers want to be. Four dates should sit in a row rather
+     than as four full-width bars with an ocean of space in each; a sentence
+     needs the whole width. Measured from the longest one, since they have to
+     share a layout. */
+  function optionShape(opts) {
+    var longest = 0, pics = false;
+    opts.forEach(function (o) {
+      longest = Math.max(longest, String(o.text || '').trim().length);
+      if (o.media) pics = true;
+    });
+    if (pics) return 'pics';                    // pictures set their own grid
+    if (longest <= 12) return 'tight';          // 1994, Blue, Owl
+    if (longest <= 28) return 'mid';            // a few words
+    return 'wide';                              // a phrase or a sentence
+  }
+
+  /* A long question has to give way; a short one can be large. */
+  function questionShape(text) {
+    var n = String(text || '').trim().length;
+    if (n > 150) return 'q-xlong';
+    if (n > 80) return 'q-long';
+    return '';
+  }
+
   function pQuestion(reveal) {
     var L = live(), q = currentQ();
     var opts = filledOptions(q);
+    var shape = optionShape(opts);
+    var qShape = questionShape(q.text);
 
     return el('div.slide' + (q.media ? '.has-media' : ''), [
       el('div.s-kicker', { text: 'Question ' + (L.index + 1) + ' of ' + L.questionCount }),
-      el('h2.s-q', { text: q.text }),
+      el('h2.s-q' + (qShape ? '.' + qShape : ''), { text: q.text }),
       stageMedia(q.media),
-      // Few options read better stacked full-width on a projector than
-      // squeezed into two columns with a gap at the end.
-      el('div.s-opts' + (opts.length <= 3 ? '.single' : '')
-         + (opts.some(function (o) { return o.media; }) ? '.with-media' : ''), opts.map(function (o) {
+      el('div.s-opts.opts-' + shape
+         + (shape === 'pics' ? '.with-media' : ''), opts.map(function (o) {
         var cls = reveal ? (o.i === q.correct ? '.right' : '.wrong') : '';
         return el('div.s-opt' + cls, [
           el('span.k', { text: KEYS[o.i] }),
@@ -539,6 +563,7 @@
     var L = live(), q = quiz().questions[L.index];
     var mine = L.myAnswers[L.index];
     var opts = filledOptions(q);
+    var shape = optionShape(opts);
 
     return el('div.play', [
       el('div.play-head', [
@@ -546,9 +571,9 @@
         scoreSoFar(L),
         mine !== undefined ? el('span.pill.done', { text: '✓ Answer sent' }) : null
       ]),
-      el('h2.play-q', { text: q.text }),
+      el('h2.play-q' + (questionShape(q.text) ? '.' + questionShape(q.text) : ''), { text: q.text }),
       phoneMedia(q.media),
-      el('div.play-opts', opts.map(function (o) {
+      el('div.play-opts.opts-' + shape, opts.map(function (o) {
         return el('button.play-opt' + (mine === o.i ? '.picked' : ''), {
           type: 'button',
           onclick: function () {
