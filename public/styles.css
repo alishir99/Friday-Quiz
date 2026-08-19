@@ -720,25 +720,34 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 }
 
 .s-opts {
-  display: grid; grid-template-columns: 1fr 1fr;
+  /* No default column count - one of the .cols-N classes always sets it, chosen
+     from how many answers there are and how long they run. */
+  display: grid;
   gap: clamp(12px, min(1.6vw, 2.4vh), 22px);
   margin-top: clamp(28px, 4.4vh, 64px);
 }
 /* Three or fewer read better as full-width rows on a big screen. */
 /* Laid out by what is in them, not how many there are. A row of years should
    not be four full-width bars with an ocean of space in each. */
-.s-opts.opts-tight { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
-.s-opts.opts-mid   { grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
-.s-opts.opts-wide  { grid-template-columns: 1fr; }
-.s-opts.opts-pics  { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+/* The shape decides the type; the column count decides the arrangement. */
 
 /* Short answers can afford to be large; a phrase has to give way. */
 .s-opts.opts-tight > .s-opt { font-size: clamp(22px, min(3vw, 4.5vh), 46px); justify-content: center; }
 .s-opts.opts-wide  > .s-opt { font-size: clamp(17px, min(1.9vw, 2.85vh), 30px); }
-/* With an odd number in a two-column run, let the last one fill the row rather
-   than leaving a hole beside it. Only where the answers are wordy - a lone year
-   stretched across the full width looks stranded, not tidy. */
-.s-opts.opts-mid > .s-opt:last-child:nth-child(odd) { grid-column: 1 / -1; }
+/* Explicit column counts, set from how many answers there are and how long
+   they run. auto-fit left three answers as two-and-a-lonely-one, and stretching
+   the last across the slide to hide the gap looked worse than the gap. */
+.s-opts.cols-1 { grid-template-columns: 1fr; }
+.s-opts.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.s-opts.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.s-opts.cols-4 { grid-template-columns: repeat(4, 1fr); }
+/* Narrow screens step down: four across is unreadable on a phone. */
+@media (max-width: 1100px) { .s-opts.cols-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 820px)  { .s-opts.cols-3 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 620px)  {
+  .s-opts.cols-2, .s-opts.cols-3, .s-opts.cols-4 { grid-template-columns: 1fr; }
+  .s-opts.opts-tight.cols-3, .s-opts.opts-tight.cols-4 { grid-template-columns: repeat(2, 1fr); }
+}
 .s-opt {
   display: flex; align-items: center; gap: clamp(14px, min(1.5vw, 2.25vh), 22px);
   background: var(--surface-2); border: 2px solid transparent;
@@ -1237,8 +1246,10 @@ audio.media-player { height: 44px; }
   flex: 1 1 auto; min-height: 0;
 }
 .s-media img, .s-media video {
-  max-width: 100%; max-height: 100%;
-  width: auto; height: auto;
+  /* width/height 100% rather than auto: an img at height:auto draws at its own
+     natural size and will not scale UP, so the box grew and the picture stayed
+     small with white space around it. object-fit keeps the proportions. */
+  width: 100%; height: 100%; min-height: 0;
   object-fit: contain; border-radius: var(--r-lg);
   background: var(--surface-2);
 }

@@ -296,6 +296,20 @@
     return 'wide';                              // a phrase or a sentence
   }
 
+  /* How many across. Chosen so the rows come out even - three answers go three
+     across rather than two and a stranded one, which is what looked broken. */
+  function optionColumns(shape, count) {
+    if (shape === 'wide') return 1;
+    if (shape === 'pics') return count <= 2 ? count : (count === 3 ? 3 : 2);
+    if (shape === 'tight') {
+      if (count <= 3) return count;             // 2 or 3 across, evenly
+      return count === 4 ? 4 : (count % 3 === 0 ? 3 : 2);
+    }
+    // 'mid': wordier, so fewer across.
+    if (count <= 3) return count === 3 ? 3 : count;
+    return count % 2 === 0 ? 2 : 3;
+  }
+
   /* A long question has to give way; a short one can be large. */
   function questionShape(text) {
     var n = String(text || '').trim().length;
@@ -314,7 +328,7 @@
       el('div.s-kicker', { text: 'Question ' + (L.index + 1) + ' of ' + L.questionCount }),
       el('h2.s-q' + (qShape ? '.' + qShape : ''), { text: q.text }),
       stageMedia(q.media, q.mediaSize),
-      el('div.s-opts.opts-' + shape
+      el('div.s-opts.opts-' + shape + '.cols-' + optionColumns(shape, opts.length)
          + (shape === 'pics' ? '.with-media' : ''), opts.map(function (o) {
         var cls = reveal ? (o.i === q.correct ? '.right' : '.wrong') : '';
         return el('div.s-opt' + cls, [
