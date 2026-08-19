@@ -258,7 +258,10 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   width: 100%; min-height: 40px; padding: 9px 13px;
   background: var(--surface); color: var(--ink);
   border: 1px solid var(--line); border-radius: var(--r-sm);
-  font-size: 15px; transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
+  /* 16px is a floor, not a preference. Safari and Chrome on iOS zoom the whole
+     page in when you focus a field smaller than this, and it stays zoomed after
+     you are done - which is what made signing in leave the app magnified. */
+  font-size: 16px; transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
 }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
 .input:focus, .textarea:focus, .select:focus {
@@ -1292,7 +1295,9 @@ audio.media-player { height: 44px; }
   .app { padding: 20px 14px 64px; }
   .card { border-radius: var(--r); }
   .btn { min-height: 36px; padding: 0 14px; font-size: 14px; }
-  .input, .textarea, .select { min-height: 38px; font-size: 15px; padding: 8px 12px; }
+  /* Never below 16px on a phone: see the note on .input - iOS zooms the page
+     to focus anything smaller, and does not zoom back out. */
+  .input, .textarea, .select { min-height: 38px; font-size: 16px; padding: 8px 12px; }
   .kicker { font-size: 12px; }
   .list-row { padding: 10px 13px; gap: 10px; }
   .av { width: 32px; height: 32px; font-size: 13px; }
