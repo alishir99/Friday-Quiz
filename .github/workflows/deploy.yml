@@ -1,0 +1,29 @@
+# Deploy to Cloudflare Pages on every push.
+#
+# Cloudflare's own Git integration kept dropping its connection to this
+# repository, which meant pushes were silently ignored and the site quietly
+# served week-old code. This does the same job from here instead: the output
+# directory is in this file rather than a form on a dashboard, so it cannot be
+# mistyped, and a failure shows up in the Actions tab with a log rather than as
+# a stale page nobody notices.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # public/ is the app. functions/ is picked up automatically and is
+          # what proxies /api and /media through to the VM.
+          command: pages deploy public --project-name=quizmys --branch=main
