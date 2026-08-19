@@ -526,10 +526,12 @@
 
   function plTopic() {
     var L = live();
-    return el('div.play', [
-      el('div.play-head', [el('span.play-step', { text: 'Tonight’s topic' })]),
-      el('h2.play-q', { text: L.topic || 'Anything goes' }),
-      el('p.play-foot', { text: L.questionCount + ' questions and a tiebreaker. Here we go.' })
+    // Nothing to do on this screen, so it sits in the middle rather than
+    // starting at the top like a question does.
+    return el('div.play.play-topic', [
+      el('div.play-step', { text: 'Tonight’s topic' }),
+      el('h2.play-topic-t', { text: L.topic || 'Anything goes' }),
+      el('p.muted', { text: L.questionCount + ' questions and a tiebreaker' })
     ]);
   }
 

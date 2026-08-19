@@ -98,7 +98,7 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--ink);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.5;
   letter-spacing: -.011em;
   -webkit-font-smoothing: antialiased;
@@ -165,8 +165,8 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 }
 
 .page-head { margin-bottom: 32px; }
-.page-head h1 { font-size: 31px; }
-.page-head .sub { color: var(--ink-2); font-size: 17px; margin-top: 8px; letter-spacing: -.01em; }
+.page-head h1 { font-size: 26px; }
+.page-head .sub { color: var(--ink-2); font-size: 15px; margin-top: 8px; letter-spacing: -.01em; }
 
 .kicker {
   font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
@@ -187,7 +187,7 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-lg);
-  padding: 22px;
+  padding: 19px;
   box-shadow: var(--shadow);
 }
 .card.flat { box-shadow: none; background: var(--surface-2); border-color: transparent; }
@@ -197,12 +197,12 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-xl);
-  padding: 34px;
+  padding: 28px;
   box-shadow: var(--shadow);
   position: relative; overflow: hidden;
 }
-.hero h2 { font-size: 34px; letter-spacing: -.025em; }
-.hero .when { color: var(--ink-2); font-size: 17px; margin-top: 10px; }
+.hero h2 { font-size: 28px; letter-spacing: -.025em; }
+.hero .when { color: var(--ink-2); font-size: 15px; margin-top: 10px; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
@@ -212,10 +212,10 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 42px; padding: 0 18px;
+  min-height: 38px; padding: 0 16px;
   border-radius: var(--pill); border: 1px solid transparent;
   background: var(--surface-2); color: var(--ink);
-  font-size: 16px; font-weight: 500; cursor: pointer; text-decoration: none;
+  font-size: 15px; font-weight: 500; cursor: pointer; text-decoration: none;
   transition: background .2s var(--ease), transform .12s var(--ease), opacity .2s var(--ease);
   white-space: nowrap;
 }
@@ -255,10 +255,10 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 .field .hint.warn { color: var(--warn); font-weight: 600; }
 
 .input, .textarea, .select {
-  width: 100%; min-height: 44px; padding: 11px 14px;
+  width: 100%; min-height: 40px; padding: 9px 13px;
   background: var(--surface); color: var(--ink);
   border: 1px solid var(--line); border-radius: var(--r-sm);
-  font-size: 16px; transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
+  font-size: 15px; transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
 }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
 .input:focus, .textarea:focus, .select:focus {
@@ -282,13 +282,13 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 /* Avatars & people */
 
 .av {
-  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
   display: grid; place-items: center;
   font-size: 15px; font-weight: 600; letter-spacing: 0;
   background: var(--surface-2); color: var(--ink);
   border: 1px solid var(--line-soft);
 }
-.av.lg { width: 62px; height: 62px; font-size: 23px; }
+.av.lg { width: 54px; height: 54px; font-size: 20px; }
 .av.xl { width: 96px; height: 96px; font-size: 34px; }
 
 .av-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
@@ -333,8 +333,8 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 
 .list { border: 1px solid var(--line-soft); border-radius: var(--r); overflow: hidden; background: var(--surface); }
 .list-row {
-  display: flex; align-items: center; gap: 14px;
-  padding: 14px 18px; border-bottom: 1px solid var(--line-soft);
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 15px; border-bottom: 1px solid var(--line-soft);
 }
 .list-row:last-child { border-bottom: 0; }
 .list-row.inactive { opacity: .5; }
@@ -443,8 +443,8 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   padding: 15px 20px; border-radius: var(--r);
   background: var(--surface-2);
 }
-.board-row .nm { font-size: 17px; font-weight: 550; letter-spacing: -.015em; }
-.board-row .sc { font-size: 21px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.board-row .nm { font-size: 16px; font-weight: 550; letter-spacing: -.015em; }
+.board-row .sc { font-size: 19px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .board-row.p1 { background: color-mix(in srgb, var(--gold) 16%, var(--surface-2)); }
 .board-row.last { background: var(--accent-soft); }
 
@@ -1276,10 +1276,10 @@ audio.media-player { height: 44px; }
 
 @media (max-width: 560px) {
   .app { padding: 26px 16px 70px; }
-  .page-head h1 { font-size: 31px; }
-  .hero { padding: 26px 22px; border-radius: var(--r-lg); }
-  .hero h2 { font-size: 30px; }
-  .card { padding: 22px 20px; }
+  .page-head h1 { font-size: 25px; }
+  .hero { padding: 22px 18px; border-radius: var(--r-lg); }
+  .hero h2 { font-size: 26px; }
+  .card { padding: 18px 16px; }
   /* The nav used to add up to more than a phone is wide: four links, the
      brand and a name-bearing profile button, at desktop padding. The excess
      pushed the profile past the right edge and let the whole page slide
@@ -1414,3 +1414,13 @@ audio.media-player { height: 44px; }
 .topic-slide > * { margin-top: 0; margin-bottom: 0; }
 .topic-slide .s-title { font-size: clamp(38px, min(7vw, 10.5vh), 116px); margin-top: 8px; }
 @media (max-width: 700px) { .topic-slide .s-title { font-size: 32px; } }
+
+/* The topic on a player's own screen: nothing to do here, so it sits in the
+   middle of the screen rather than at the top like a question. */
+.play.play-topic {
+  justify-content: center; align-items: center; text-align: center; gap: 10px;
+}
+.play-topic-t {
+  font-size: clamp(28px, 7vw, 40px); font-weight: 650;
+  letter-spacing: -.025em; line-height: 1.15;
+}
