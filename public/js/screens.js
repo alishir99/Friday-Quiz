@@ -477,8 +477,8 @@
         el('div.row', [
           el('div.kicker', { text: 'Other teams on this server' }),
           el('div.spacer'),
-          el('button.btn.quiet.sm', { type: 'button', text: 'Hand the server on',
-            title: 'Give someone else the site admin role', onclick: passSite })
+          el('button.btn.quiet.sm', { type: 'button', text: 'Hand on site admin',
+            title: 'The whole server, not just a team', onclick: passSite })
         ]),
         body
       ]);
@@ -540,8 +540,9 @@
         });
         if (!everyone.length) return QC.toast('There is nobody else to hand it to');
         QC.pickPerson({
-          title: 'Who runs this server?',
-          sub: 'They will be able to create teams and see every one of them. You will not be able to take it back yourself.',
+          title: 'Hand on site admin',
+          sub: 'They take the whole server - creating teams and seeing every one of them. '
+             + 'You keep any team you run. You will not be able to take this back yourself.',
           people: everyone,
           onPick: function (id) {
             QC.net.transferSite(id)
@@ -662,7 +663,7 @@
             el('div.spacer'),
             s.siteAdmin ? el('span.pill', { title: 'You run this server', text: 'Site admin' }) : null,
             QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button',
-              text: 'Hand this team on', title: 'You keep everything else',
+              text: 'Hand on quiz master', title: 'Only this team. You keep everything else.',
               onclick: passAdmin }) : null
           ])
         ]);
@@ -679,10 +680,10 @@
 
     function passAdmin() {
       QC.pickPerson({
-        title: 'Who runs ' + ((s.team && s.team.name) || 'this team') + ' now?',
-        sub: s.siteAdmin
-          ? 'They take this team. You stay site admin of the server.'
-          : 'They take over the team - passwords, the code, the rules and the rota.',
+        title: 'Hand on quiz master',
+        sub: 'They take over ' + ((s.team && s.team.name) || 'this team') + ' - passwords, the code, '
+           + 'the rules and the rota. Nothing outside it.'
+           + (s.siteAdmin ? ' You stay site admin of the whole server.' : ''),
         people: s.users.filter(function (u) { return u.id !== s.me && !u.guest && u.active !== false; }),
         onPick: function (id) { QC.net.transferAdmin(id).catch(function (e) { QC.toast(e.message); }); }
       });
