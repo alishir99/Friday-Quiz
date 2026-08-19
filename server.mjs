@@ -1251,6 +1251,24 @@ async function api(req, res, path) {
     return json(res, 200, { ok: true, active: target.active });
   }
 
+  /* Handing over the server itself. Distinct from passing a team on: this is
+     who may create teams and see them all. Without it the very first claim on
+     an install would own it forever, with no way to leave. */
+  if (path === '/api/site-admin/transfer' && req.method === 'POST') {
+    if (!requireUser()) return;
+    if (!isSiteAdmin(me)) return json(res, 403, { error: 'Only the site admin can hand the server on' });
+    const { userId } = await readBody(req);
+    // The new owner can be on any team, but has to be a real, present member.
+    const target = teamList().map((t) => userById(t, userId)).find(Boolean);
+    if (!target) return json(res, 400, { error: 'No such person' });
+    if (target.guest) return json(res, 400, { error: 'Guests cannot run the server' });
+    if (target.active === false) return json(res, 400, { error: 'That person has been removed' });
+    db.adminId = userId;
+    await persist();
+    for (const t of teamList()) broadcast(t);   // the pill moves on every team
+    return json(res, 200, { ok: true });
+  }
+
   if (path === '/api/admin/transfer' && req.method === 'POST') {
     if (!requireUser()) return;
     if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the quiz master can do this' });

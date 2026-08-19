@@ -474,7 +474,12 @@
       });
 
       return el('div', { style: { marginTop: '20px' } }, [
-        el('div.kicker', { text: 'Other teams on this server' }),
+        el('div.row', [
+          el('div.kicker', { text: 'Other teams on this server' }),
+          el('div.spacer'),
+          el('button.btn.quiet.sm', { type: 'button', text: 'Hand the server on',
+            title: 'Give someone else the site admin role', onclick: passSite })
+        ]),
         body
       ]);
     }
@@ -519,6 +524,32 @@
           ])
         ])
       ]);
+    }
+
+    /* Handing over the server is not the same as handing over a team, and it
+       is the one thing that cannot be undone by anyone but the new owner. */
+    function passSite() {
+      QC.net.teams().then(function (r) {
+        var everyone = [];
+        r.teams.forEach(function (t) {
+          (t.users || []).forEach(function (u) {
+            if (!u.guest && u.active && u.id !== s.me) {
+              everyone.push({ id: u.id, name: u.name + '  ·  ' + t.name, active: true });
+            }
+          });
+        });
+        if (!everyone.length) return QC.toast('There is nobody else to hand it to');
+        QC.pickPerson({
+          title: 'Who runs this server?',
+          sub: 'They will be able to create teams and see every one of them. You will not be able to take it back yourself.',
+          people: everyone,
+          onPick: function (id) {
+            QC.net.transferSite(id)
+              .then(function () { QC.toast('Handed on'); QC.render(); })
+              .catch(function (e) { QC.toast(e.message); });
+          }
+        });
+      }).catch(function (e) { QC.toast(e.message); });
     }
 
     function renameOther(t) {
@@ -630,7 +661,8 @@
             ]),
             el('div.spacer'),
             s.siteAdmin ? el('span.pill', { title: 'You run this server', text: 'Site admin' }) : null,
-            QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button', text: 'Pass to someone else',
+            QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button',
+              text: 'Hand this team on', title: 'You keep everything else',
               onclick: passAdmin }) : null
           ])
         ]);
@@ -647,7 +679,10 @@
 
     function passAdmin() {
       QC.pickPerson({
-        title: 'Hand the team to who?',
+        title: 'Who runs ' + ((s.team && s.team.name) || 'this team') + ' now?',
+        sub: s.siteAdmin
+          ? 'They take this team. You stay site admin of the server.'
+          : 'They take over the team - passwords, the code, the rules and the rota.',
         people: s.users.filter(function (u) { return u.id !== s.me && !u.guest && u.active !== false; }),
         onPick: function (id) { QC.net.transferAdmin(id).catch(function (e) { QC.toast(e.message); }); }
       });

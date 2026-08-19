@@ -1275,7 +1275,21 @@ audio.media-player { height: 44px; }
 .save-state { font-variant-numeric: tabular-nums; }
 
 @media (max-width: 560px) {
-  .app { padding: 26px 16px 70px; }
+  /* A phone is held closer than a monitor, so the same sizes read larger.
+     Everything comes down a step rather than just the headings. */
+  body { font-size: 14px; }
+  .app { padding: 20px 14px 64px; }
+  .card { border-radius: var(--r); }
+  .btn { min-height: 36px; padding: 0 14px; font-size: 14px; }
+  .input, .textarea, .select { min-height: 38px; font-size: 15px; padding: 8px 12px; }
+  .kicker { font-size: 12px; }
+  .list-row { padding: 10px 13px; gap: 10px; }
+  .av { width: 32px; height: 32px; font-size: 13px; }
+  .av.lg { width: 46px; height: 46px; font-size: 17px; }
+  .page-head .sub { font-size: 14px; }
+  .hero .when { font-size: 14px; }
+  .person .nm { font-size: 15px; }
+  .rl, .rl.small { font-size: 13px; }
   .page-head h1 { font-size: 25px; }
   .hero { padding: 22px 18px; border-radius: var(--r-lg); }
   .hero h2 { font-size: 26px; }

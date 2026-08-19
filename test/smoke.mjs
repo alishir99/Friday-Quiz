@@ -895,3 +895,47 @@ test('a new team cannot claim the site', async () => {
     'and still cannot see the other teams');
   assert.equal((await stateAs('ali')).siteAdmin, true, 'Ali still owns it');
 });
+
+/* Passing a team on and handing over the server are different things, and the
+   difference matters: one is weekly housekeeping, the other gives somebody the
+   whole install. */
+test('handing on a team is not handing on the server', async () => {
+  const before = await stateAs('ali');
+  assert.equal(before.siteAdmin, true);
+  assert.equal(before.adminId, before.me, 'Ali runs this team too');
+
+  const bea = before.users.find((u) => u.name === 'Bea');
+  assert.equal((await call('/api/admin/transfer', {
+    method: 'POST', body: { userId: bea.id }, as: 'ali'
+  })).status, 200);
+
+  const after = await stateAs('ali');
+  assert.equal(after.adminId, bea.id, 'Bea runs the team now');
+  assert.equal(after.siteAdmin, true, 'but Ali still runs the server');
+  assert.equal((await call('/api/teams', { as: 'ali' })).status, 200, 'and can still see every team');
+  assert.equal((await stateAs('bea')).siteAdmin, false, 'Bea did not inherit the server');
+
+  // Put it back, since later assertions expect Ali to run this team.
+  await call('/api/admin/transfer', { method: 'POST', body: { userId: before.me }, as: 'bea' });
+});
+
+test('the server itself can be handed on, by its owner only', async () => {
+  const start = await stateAs('ali');
+  const bea = start.users.find((u) => u.name === 'Bea');
+
+  assert.equal((await call('/api/site-admin/transfer', {
+    method: 'POST', body: { userId: start.me }, as: 'bea'
+  })).status, 403, 'not by somebody who does not own it');
+
+  assert.equal((await call('/api/site-admin/transfer', {
+    method: 'POST', body: { userId: bea.id }, as: 'ali'
+  })).status, 200);
+
+  assert.equal((await stateAs('bea')).siteAdmin, true, 'Bea owns the server now');
+  assert.equal((await stateAs('ali')).siteAdmin, false, 'and Ali no longer does');
+  assert.equal((await call('/api/teams', { as: 'ali' })).status, 403, 'nor sees the other teams');
+
+  // Hand it back so the rest of the suite runs as before.
+  await call('/api/site-admin/transfer', { method: 'POST', body: { userId: start.me }, as: 'bea' });
+  assert.equal((await stateAs('ali')).siteAdmin, true);
+});

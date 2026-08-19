@@ -45,6 +45,8 @@
 
   Net.claimAdmin = function () { return Net.call('api/admin/claim', 'POST', {}); };
   Net.transferAdmin = function (userId) { return Net.call('api/admin/transfer', 'POST', { userId: userId }); };
+  // Hands over the server, not a team - a separate job and a separate call.
+  Net.transferSite = function (userId) { return Net.call('api/site-admin/transfer', 'POST', { userId: userId }); };
   // Removing is a flag, not a delete - the same call puts someone back.
   Net.setActive = function (userId, active) {
     return Net.call('api/admin/set-active', 'POST', { userId: userId, active: active });
