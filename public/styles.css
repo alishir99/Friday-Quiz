@@ -790,27 +790,32 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .s-opt.right .k { background: var(--good); color: #fff; border-color: var(--good); }
 .s-opt.wrong { opacity: .32; }
 
+/* Set apart from the answers by a rule and a gap, so it reads as the verdict on
+   them rather than another one of them. Narrower and quieter than the options -
+   it is a footnote, and they are the thing being looked at. */
 .s-answer {
-  margin-top: clamp(28px, 4.4vh, 60px);
-  padding: clamp(22px, min(2.8vw, 4.2vh), 40px) clamp(26px, min(3vw, 4.5vh), 46px);
-  background: var(--good-soft); border-radius: var(--r-xl);
-  border-left: 6px solid var(--good);
+  margin-top: clamp(20px, 3.2vh, 44px);
+  padding-top: clamp(16px, 2.4vh, 30px);
+  border-top: 1px solid var(--line-soft);
+  align-self: center; max-width: min(900px, 92%); width: 100%;
   animation: revealIn .55s var(--ease-out) both;
 }
 @keyframes revealIn { from { opacity: 0; transform: translateY(18px) scale(.985) } }
 .s-answer .lbl {
-  font-size: clamp(13px, min(1.2vw, 1.8vh), 18px); font-weight: 650; letter-spacing: .10em;
+  font-size: clamp(11px, min(1vw, 1.5vh), 15px); font-weight: 650; letter-spacing: .10em;
   text-transform: uppercase; color: var(--good); margin-bottom: 8px;
 }
 .s-answer .val {
-  font-size: clamp(26px, min(3.6vw, 5.4vh), 58px); font-weight: 650; letter-spacing: -.025em; line-height: 1.1;
+  font-size: clamp(20px, min(2.4vw, 3.6vh), 38px); font-weight: 650; letter-spacing: -.025em; line-height: 1.15;
 }
 .s-answer .note {
-  font-size: clamp(16px, min(1.6vw, 2.4vh), 25px); color: var(--ink-2); margin-top: 12px; font-weight: 400;
+  font-size: clamp(14px, min(1.25vw, 1.9vh), 19px); color: var(--ink-2); margin-top: 8px; font-weight: 400;
 }
 
+/* Sits under the join block with room of its own, never overlapping it. */
 .s-hint {
-  margin-top: clamp(24px, 3.5vh, 48px);
+  flex-shrink: 0;
+  margin-top: clamp(16px, 2.4vh, 32px);
   font-size: clamp(15px, min(1.5vw, 2.25vh), 22px); color: var(--ink-3); font-weight: 450;
   display: flex; align-items: center; gap: 10px;
 }
@@ -1034,7 +1039,11 @@ body.playing .app { padding: 0; max-width: none; }
 /* The lobby is a join screen first, like Kahoot's PIN slide: the QR is the
    biggest thing on it, with who has already joined off to the side. */
 .lobby-grid {
-  display: flex; align-items: stretch; flex-wrap: wrap;
+  /* Takes the room that is going, so the hint below it is never squeezed into
+     the same space. align-items: start, or the join card stretches to whatever
+     the player list happens to be and overlaps what follows. */
+  flex: 1 1 auto; min-height: 0;
+  display: flex; align-items: flex-start; flex-wrap: wrap;
   gap: clamp(28px, min(4vw, 6.0vh), 64px);
   margin-top: clamp(32px, 5vh, 64px);
 }
@@ -1106,9 +1115,11 @@ body.playing .app { padding: 0; max-width: none; }
 
 /* how many have answered */
 .tally { margin-top: clamp(14px, 2.4vh, 40px); }
+/* Full width, so it lines up with the answers above it rather than stopping
+   two thirds of the way across. The filled part is the share who have answered. */
 .tally-bar {
   height: 10px; background: var(--surface-2); border-radius: 6px; overflow: hidden;
-  max-width: 620px;
+  width: 100%;
 }
 .tally-bar i {
   display: block; height: 100%; background: var(--accent); border-radius: 6px;
