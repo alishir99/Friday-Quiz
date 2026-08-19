@@ -561,6 +561,91 @@
 
     /* Why this person cannot be removed yet, or '' if they can. Mirrors the
        server's guards - it refuses either way, this just says so sooner. */
+    /* The invite code, readable by any member so anyone can invite someone,
+       changeable by the admin without going anywhere near the server. */
+    function inviteBlock() {
+      if (s.inviteCode === null || s.inviteCode === undefined) return null;   // a guest
+      var admin = QC.isAdmin();
+      if (!s.inviteCode) {
+        return el('div', { style: { marginTop: '14px' } }, [
+          el('p.muted', { text: 'Anyone with the link can sign up - no code is set.' }),
+          admin ? el('button.btn.quiet.sm', { type: 'button', text: 'Set an invite code',
+            style: { marginTop: '8px' }, onclick: newCode }) : null
+        ]);
+      }
+      return el('div.invite-box', { style: { marginTop: '14px' } }, [
+        el('div.kicker', { text: 'Invite code' }),
+        el('div.invite-code', { text: s.inviteCode, title: 'Tap to copy',
+          onclick: function () { copy(s.inviteCode); } }),
+        admin ? el('div.row', { style: { marginTop: '10px' } }, [
+          el('button.btn.quiet.sm', { type: 'button', text: 'New code', onclick: newCode }),
+          el('button.btn.quiet.sm', { type: 'button', text: 'Type my own', onclick: pickCode })
+        ]) : null
+      ]);
+    }
+
+    function copy(text) {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text)
+          .then(function () { QC.toast('Copied'); })
+          .catch(function () { /* a tap that does nothing is better than a scary error */ });
+      }
+    }
+
+    function newCode() {
+      QC.confirm({
+        title: 'Make a new invite code?',
+        sub: 'The old one stops working straight away. Anyone who already has an account is unaffected.',
+        ok: 'New code'
+      }).then(function (yes) {
+        if (!yes) return;
+        QC.net.setInvite().then(function (r) { QC.toast('New code: ' + r.inviteCode); })
+          .catch(function (e) { QC.toast(e.message); });
+      });
+    }
+
+    function pickCode() {
+      QC.ask({
+        title: 'Invite code',
+        sub: 'Anything your team will remember. Capitals do not matter.',
+        value: s.inviteCode || '', placeholder: 'e.g. pickled-onion', ok: 'Save'
+      }).then(function (v) {
+        if (!v) return;                      // cancelled; it never returns empty
+        QC.net.setInvite(v).catch(function (e) { QC.toast(e.message); });
+      });
+    }
+
+    function adminCard() {
+      if (s.adminId) {
+        return el('div.card.flat', { style: { marginTop: '10px' } }, [
+          el('div.kicker', { text: 'Admin / Quiz master' }),
+          el('div.row', { style: { marginTop: '10px', alignItems: 'center' } }, [
+            av(QC.name(s.adminId)),
+            el('div', { style: { marginLeft: '12px' } },
+              [QC.name(s.adminId) + (s.adminId === s.me ? '  ·  you' : '')]),
+            el('div.spacer'),
+            QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button', text: 'Pass to someone else',
+              onclick: passAdmin }) : null
+          ])
+        ]);
+      }
+      return el('div.card.flat', { style: { marginTop: '10px' } }, [
+        el('div.kicker', { text: 'Admin / Quiz master' }),
+        el('p.muted', { style: { marginTop: '8px' } },
+          'Nobody is admin yet. The admin resets forgotten passwords and edits the Rules page.'),
+        el('button.btn.sm', { type: 'button', text: 'Become admin', style: { marginTop: '10px' },
+          onclick: function () { QC.net.claimAdmin().catch(function (e) { QC.toast(e.message); }); } })
+      ]);
+    }
+
+    function passAdmin() {
+      QC.pickPerson({
+        title: 'Pass admin to who?',
+        people: s.users.filter(function (u) { return u.id !== s.me && !u.guest && u.active !== false; }),
+        onPick: function (id) { QC.net.transferAdmin(id).catch(function (e) { QC.toast(e.message); }); }
+      });
+    }
+
     function renameTeam() {
       QC.ask({
         title: 'Rename the team',
