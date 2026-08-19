@@ -147,7 +147,6 @@
         .then(function () { QC.closeSheet(); QC.toast('Password changed'); })
         .catch(function (e) { err.textContent = e.message; err.hidden = false; });
     }
-    newPass.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
 
     QC.sheet({
       title: 'Change password',

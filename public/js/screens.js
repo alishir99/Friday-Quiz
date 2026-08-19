@@ -283,7 +283,7 @@
       QC.ask({
         title: 'What is the quiz about?',
         sub: 'Anything goes: films, geography, the 1980s, the office.',
-        value: u.topic || '', placeholder: 'e.g. British seaside towns', ok: 'Set topic'
+        value: u.topic || '', placeholder: 'e.g. Who wants some Fika?', ok: 'Set topic'
       }).then(function (v) {
         if (v) QC.net.setTopic(v).catch(function (e) { QC.toast(e.message); });
       });

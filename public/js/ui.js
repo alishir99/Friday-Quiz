@@ -111,9 +111,32 @@
     sheetHost.hidden = false;
     sheetHost.onclick = function (e) { if (e.target === sheetHost && opts.dismissible !== false) QC.closeSheet(); };
     document.addEventListener('keydown', escClose, true);
+    /* Enter does what the dialog is for. Handled here rather than on each
+       input so that confirmations get it too - they have no field to hang it
+       off, and pressing Enter at "Remove team?" doing nothing feels broken.
+       A button keeps its own Enter (the browser clicks the focused one), and
+       a textarea keeps Enter for newlines. */
+    body.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      var t = e.target;
+      if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON')) return;
+      var buttons = body.querySelectorAll('.row button');
+      var primary = buttons[buttons.length - 1];       // the affirmative one
+      if (primary) { e.preventDefault(); primary.click(); }
+    });
 
-    var firstInput = body.querySelector('input, textarea, select, button');
-    (firstInput || body).focus();
+    /* Where the cursor lands decides what Enter does, so it is chosen rather
+       than left to document order. A field first, if there is one. Otherwise
+       the affirmative button - except on a destructive dialog, where Cancel
+       is the safe place to be leaning. */
+    var field = body.querySelector('input, textarea, select');
+    var actions = body.querySelectorAll('.row button');
+    var primary = actions[actions.length - 1];
+    var target = field
+      || ((primary && !primary.classList.contains('danger')) ? primary : actions[0])
+      || body;
+    target.focus();
+    if (field && field.select) field.select();
     return body;
   };
 
@@ -159,7 +182,6 @@
         if (!v) { input.focus(); return; }
         QC.closeSheet(); resolve(v);
       };
-      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
       QC.sheet({
         title: opts.title,
         sub: opts.sub,
