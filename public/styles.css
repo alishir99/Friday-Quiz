@@ -696,8 +696,13 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
   max-width: 1500px; width: 100%; margin: 0 auto;
   overflow: hidden;
 }
-/* Every direct child may give up room rather than push the slide taller. */
-.slide > * { min-height: 0; flex-shrink: 1; }
+/* Nothing gives up room it is actually drawing in. A child told it may shrink
+   gets a smaller box, but its contents keep their size and spill out over
+   whatever comes next - an overlap, not a saving. That is what put the join
+   card on top of the lobby hint. Only the picture can truly shrink, because
+   object-fit lets it draw smaller, so only the picture is allowed to. */
+.slide > * { min-height: 0; flex-shrink: 0; }
+.slide > .s-media { flex-shrink: 1; }
 /* The question, the answers and the tally keep their content height; only the
    picture is allowed to take what is left. */
 .slide > .s-q, .slide > .s-kicker, .slide > .s-opts, .slide > .tally { flex-grow: 0; }
@@ -790,26 +795,35 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .s-opt.right .k { background: var(--good); color: #fff; border-color: var(--good); }
 .s-opt.wrong { opacity: .32; }
 
-/* Set apart from the answers by a rule and a gap, so it reads as the verdict on
-   them rather than another one of them. Narrower and quieter than the options -
-   it is a footnote, and they are the thing being looked at. */
+/* The reveal, as a card set apart from the options rather than a rule ruled
+   across the slide. A line says "and now something else"; a card says "this
+   one is the answer", which is the thing being said. Centred and narrower
+   than the options above it, so the eye lands rather than scans. */
 .s-answer {
+  align-self: center; width: 100%; max-width: min(820px, 92%);
   margin-top: clamp(20px, 3.2vh, 44px);
-  padding-top: clamp(16px, 2.4vh, 30px);
-  border-top: 1px solid var(--line-soft);
-  align-self: center; max-width: min(900px, 92%); width: 100%;
+  padding: clamp(16px, 2.2vh, 26px) clamp(20px, min(2.4vw, 3.4vh), 34px);
+  background: var(--surface-2);
+  border-radius: clamp(16px, 2.2vh, 26px);
   animation: revealIn .55s var(--ease-out) both;
 }
 @keyframes revealIn { from { opacity: 0; transform: translateY(18px) scale(.985) } }
 .s-answer .lbl {
-  font-size: clamp(11px, min(1vw, 1.5vh), 15px); font-weight: 650; letter-spacing: .10em;
-  text-transform: uppercase; color: var(--good); margin-bottom: 8px;
+  font-size: clamp(10px, min(.85vw, 1.3vh), 13px); font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--good); margin-bottom: 6px;
 }
 .s-answer .val {
   font-size: clamp(20px, min(2.4vw, 3.6vh), 38px); font-weight: 650; letter-spacing: -.025em; line-height: 1.15;
 }
+/* A footnote to the answer, not a second announcement: hairline above it,
+   quieter ink, and a measure short enough to read in one pass from the back
+   of the room. */
 .s-answer .note {
-  font-size: clamp(14px, min(1.25vw, 1.9vh), 19px); color: var(--ink-2); margin-top: 8px; font-weight: 400;
+  margin-top: clamp(10px, 1.5vh, 16px);
+  padding-top: clamp(10px, 1.5vh, 16px);
+  border-top: 1px solid var(--line-soft);
+  font-size: clamp(13px, min(1.15vw, 1.75vh), 17px);
+  line-height: 1.5; color: var(--ink-2); font-weight: 400;
 }
 
 /* Sits under the join block with room of its own, never overlapping it. */
@@ -1039,10 +1053,11 @@ body.playing .app { padding: 0; max-width: none; }
 /* The lobby is a join screen first, like Kahoot's PIN slide: the QR is the
    biggest thing on it, with who has already joined off to the side. */
 .lobby-grid {
-  /* Takes the room that is going, so the hint below it is never squeezed into
-     the same space. align-items: start, or the join card stretches to whatever
-     the player list happens to be and overlaps what follows. */
-  flex: 1 1 auto; min-height: 0;
+  /* Keeps exactly its content's height. Given room to shrink, the box gets
+     smaller but the join card inside it does not, so the card spills out and
+     lands on top of the hint below - which is the overlap this fixes. Nothing
+     sits under the hint, so there is nothing to gain by growing either. */
+  flex: 0 0 auto;
   display: flex; align-items: flex-start; flex-wrap: wrap;
   gap: clamp(28px, min(4vw, 6.0vh), 64px);
   margin-top: clamp(32px, 5vh, 64px);
@@ -1054,8 +1069,11 @@ body.playing .app { padding: 0; max-width: none; }
   background: var(--surface-2); border-radius: 28px;
 }
 .lobby-join .qr-code { padding: clamp(10px, min(1.2vw, 1.8vh), 18px); border-radius: 18px; }
+/* The floor is low on purpose. At 190px a short laptop window could not fit
+   the card and the hint together, and something had to give. A phone camera
+   reads 130px from a metre away, so shrinking is the cheaper thing to give. */
 .lobby-join .qr-code svg {
-  width: clamp(190px, min(17vw, 25vh), 320px); height: clamp(190px, min(17vw, 25vh), 320px);
+  width: clamp(130px, min(17vw, 25vh), 320px); height: clamp(130px, min(17vw, 25vh), 320px);
 }
 .lobby-join-label { font-size: clamp(18px, min(1.7vw, 2.55vh), 26px); font-weight: 650; }
 .lobby-join-or {
@@ -1483,8 +1501,9 @@ audio.media-player { height: 44px; }
   .s-opts { gap: 8px; margin-top: 14px; }
   .s-opt { font-size: 16px; padding: 11px 14px; gap: 10px; }
   .s-opt .k { width: 30px; height: 30px; font-size: 14px; }
-  .s-answer { margin-top: 14px; padding: 12px 14px; }
+  .s-answer { margin-top: 14px; padding: 12px 14px; border-radius: 14px; max-width: 100%; }
   .s-answer .val { font-size: 19px; }
+  .s-answer .note { margin-top: 9px; padding-top: 9px; font-size: 13px; }
   .s-media { flex: 0 1 auto; }
   .s-media img, .s-media video { max-height: 30vh; }
 
