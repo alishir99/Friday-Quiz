@@ -186,8 +186,8 @@
           el('span.dim.small', { text: 'Round ' + (s.history.length + 1) })
         ]),
         el('h2', { style: { marginTop: '20px' }, text: heading }),
-        topicText ? el('button.btn.quiet.sm', {
-          type: 'button', style: { marginTop: '10px' },
+        topicText ? el('button.btn.chip', {
+          type: 'button', style: { marginTop: '12px' },
           text: topicShown ? 'Hide it' : 'Show me the topic',
           onclick: function () { topicShown = !topicShown; QC.render(); }
         }) : null,

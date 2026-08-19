@@ -1360,7 +1360,9 @@ audio.media-player { height: 44px; }
    quiet enough not to compete with the primary button, solid enough to read
    as a control rather than a link. */
 .btn.chip {
-  padding: 6px 14px; font-size: 13.5px; font-weight: 550;
+  /* .btn stands 46px tall for a thumb; a chip sits beside a heading and has to
+     be shorter than the text it accompanies, so the floor comes off. */
+  min-height: 0; padding: 7px 15px; font-size: 13.5px; font-weight: 550;
   border-radius: var(--pill); border: 1px solid var(--accent);
   background: var(--surface); color: var(--accent);
   transition: background .18s var(--ease), border-color .18s var(--ease), color .18s var(--ease);
