@@ -1063,7 +1063,7 @@ async function api(req, res, path) {
      unreachable, nobody else can help a locked-out teammate back in. */
   if (path === '/api/reset-password' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can reset a password' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the quiz master can reset a password' });
     const { userId } = await readBody(req);
     const user = userById(team, userId);
     if (!user) return json(res, 404, { error: 'No such person' });
@@ -1078,7 +1078,7 @@ async function api(req, res, path) {
      then only that person can hand it to someone else. */
   if (path === '/api/admin/claim' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (isGuest(team, me)) return json(res, 403, { error: 'Guests cannot be admin' });
+    if (isGuest(team, me)) return json(res, 403, { error: 'Guests cannot run a team' });
     if (team.masterId) return json(res, 409, { error: 'There is already an admin' });
     team.masterId = me;
     /* Quiz master of this team, and that is usually all. Running the install
@@ -1190,7 +1190,7 @@ async function api(req, res, path) {
      set your own, or nothing to have one made up. */
   if (path === '/api/invite' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can change this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the quiz master can change this' });
     const { code } = await readBody(req);
     const wanted = String(code == null ? '' : code).trim().slice(0, 80);
     if (code !== undefined && code !== null && !wanted) {
@@ -1210,7 +1210,7 @@ async function api(req, res, path) {
      points at them dangles, and putting them back is one click. */
   if (path === '/api/admin/set-active' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can do this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the quiz master can do this' });
     const { userId, active } = await readBody(req);
     const target = userById(team, userId);
     if (!target) return json(res, 400, { error: 'No such person' });
@@ -1253,10 +1253,10 @@ async function api(req, res, path) {
 
   if (path === '/api/admin/transfer' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can do this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the quiz master can do this' });
     const { userId } = await readBody(req);
     if (!userById(team, userId)) return json(res, 400, { error: 'No such person' });
-    if (isGuest(team, userId)) return json(res, 400, { error: 'Guests cannot be admin' });
+    if (isGuest(team, userId)) return json(res, 400, { error: 'Guests cannot run a team' });
     if (isRemoved(team, userId)) return json(res, 400, { error: 'That person has been removed' });
     // Hands over this team. Who owns the install is a separate question.
     team.masterId = userId;
@@ -1408,7 +1408,7 @@ async function api(req, res, path) {
     if (!requireUser()) return;
     // Deciding who does what next week is an admin call, not the weekly quiz
     // master's - those stay separate on purpose.
-    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can change this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the quiz master can change this' });
     const { quizMasterId, topicPickerId } = await readBody(req);
     if (!team.upcoming) return json(res, 400, { error: 'Nothing scheduled' });
     if (quizMasterId && !userById(team, quizMasterId)) return json(res, 400, { error: 'No such person' });

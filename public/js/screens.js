@@ -38,7 +38,7 @@
     var lede = el('p.muted', { style: { marginTop: '8px', marginBottom: '26px' },
       text: 'Sign in with your name and password to join this week’s quiz.' });
     var note = el('p.dim.small', { style: { marginTop: '18px', textAlign: 'center' },
-      text: 'First time in, this creates your account with that password. Forgot it? Ask the admin to reset it from the Team page.' });
+      text: 'First time in, this creates your account with that password. Forgot it? Ask your quiz master to reset it from the Team page.' });
     var swap = el('button.btn.ghost.sm.block', { type: 'button',
       style: { marginTop: '12px' }, text: 'Just visiting? Join as a guest' });
     var memberOnly = el('div.stack', { style: { gap: '12px' } }, [pass]);
@@ -75,7 +75,7 @@
         : 'Sign in with your name and password to join this week’s quiz.';
       note.textContent = guest
         ? 'Guests play and score like everyone else, but never get handed next week’s quiz.'
-        : 'First time in, this creates your account with that password. Forgot it? Ask the admin to reset it from the Team page.';
+        : 'First time in, this creates your account with that password. Forgot it? Ask your quiz master to reset it from the Team page.';
       name.focus();
     }
     swap.onclick = function () { setMode(!guest); };
@@ -615,32 +615,39 @@
       });
     }
 
+    /* Who runs THIS team. It used to say "Admin", which read as running the
+       whole server - and on a new team, "Become admin" looked like an open
+       door to it. The server never allowed that; the words did. */
     function adminCard() {
       if (s.adminId) {
         return el('div.card.flat', { style: { marginTop: '10px' } }, [
-          el('div.kicker', { text: 'Admin / Quiz master' }),
+          el('div.kicker', { text: 'Quiz master' }),
           el('div.row', { style: { marginTop: '10px', alignItems: 'center' } }, [
             av(QC.name(s.adminId)),
-            el('div', { style: { marginLeft: '12px' } },
-              [QC.name(s.adminId) + (s.adminId === s.me ? '  ·  you' : '')]),
+            el('div', { style: { marginLeft: '12px' } }, [
+              el('div', { text: QC.name(s.adminId) + (s.adminId === s.me ? '  ·  you' : '') }),
+              el('div.rl.small', { text: 'Runs ' + ((s.team && s.team.name) || 'this team') })
+            ]),
             el('div.spacer'),
+            s.siteAdmin ? el('span.pill', { title: 'You run this server', text: 'Site admin' }) : null,
             QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button', text: 'Pass to someone else',
               onclick: passAdmin }) : null
           ])
         ]);
       }
       return el('div.card.flat', { style: { marginTop: '10px' } }, [
-        el('div.kicker', { text: 'Admin / Quiz master' }),
+        el('div.kicker', { text: 'Quiz master' }),
         el('p.muted', { style: { marginTop: '8px' } },
-          'Nobody is admin yet. The admin resets forgotten passwords and edits the Rules page.'),
-        el('button.btn.sm', { type: 'button', text: 'Become admin', style: { marginTop: '10px' },
+          'Nobody runs ' + ((s.team && s.team.name) || 'this team') + ' yet. The quiz master resets '
+          + 'forgotten passwords, changes the code and edits the Rules page - for this team only.'),
+        el('button.btn.sm', { type: 'button', text: 'Run this team', style: { marginTop: '10px' },
           onclick: function () { QC.net.claimAdmin().catch(function (e) { QC.toast(e.message); }); } })
       ]);
     }
 
     function passAdmin() {
       QC.pickPerson({
-        title: 'Pass admin to who?',
+        title: 'Hand the team to who?',
         people: s.users.filter(function (u) { return u.id !== s.me && !u.guest && u.active !== false; }),
         onPick: function (id) { QC.net.transferAdmin(id).catch(function (e) { QC.toast(e.message); }); }
       });
