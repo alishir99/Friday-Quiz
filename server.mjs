@@ -18,7 +18,7 @@ import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
-// Secrets (DEEPSEEK_API_KEY) live in .env, not the shell, so `node server.mjs`
+// Secrets (LLM_API_KEY) live in .env, not the shell, so `node server.mjs`
 // keeps working as documented without anyone having to export anything first.
 try { process.loadEnvFile(join(ROOT, '.env')); } catch {}
 
@@ -245,7 +245,19 @@ const MIN_PASSWORD = 4;
    search-backed assistant this one cannot cite live sources - it answers
    from what the model already knows, and is told to say so when unsure
    rather than inventing a confident-sounding fact. */
-const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+/* Which provider answers is a .env line, not a code change. DeepSeek, OpenAI,
+   Groq, Together and most others all speak the same /chat/completions shape -
+   same bearer header, same {model, messages} body, same choices[0].message.content
+   coming back - so swapping one for another is a URL and a model name.
+   Note the /v1 difference: OpenAI wants it in the path, DeepSeek does not. */
+const LLM_URL = process.env.LLM_URL || 'https://api.deepseek.com/chat/completions';
+const LLM_MODEL = process.env.LLM_MODEL || process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+/* Either name works, so an existing .env keeps running untouched. */
+const LLM_KEY = () => process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY;
+/* Reasoning models (o3, gpt-5) reject max_tokens and want max_completion_tokens
+   instead; everything else still takes max_tokens. Set this when you switch to
+   one, or every request comes back 400. */
+const LLM_MAX_TOKENS_FIELD = process.env.LLM_MAX_TOKENS_FIELD || 'max_tokens';
 const MAX_ASSIST_MESSAGE = 2000;
 const MAX_ASSIST_HISTORY = 20;
 const ASSIST_SYSTEM = `You are Quizzy, the quiz master's humble servant: a cheerful, slightly theatrical butler who helps write questions for a weekly pub-style trivia quiz. Keep that voice light - a wry aside is welcome, a paragraph of it is not.
@@ -308,20 +320,20 @@ function extractQuiz(text) {
 }
 
 async function askAssistant(history, topic) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) throw new Error('The assistant needs DEEPSEEK_API_KEY set - put it in .env and restart the server');
+  const apiKey = LLM_KEY();
+  if (!apiKey) throw new Error('The assistant needs LLM_API_KEY set - put it in .env and restart the server');
 
   const system = ASSIST_SYSTEM + (topic ? `\n\nThis week's topic, if it helps: "${topic}"` : '');
 
-  const res = await fetch('https://api.deepseek.com/chat/completions', {
+  const res = await fetch(LLM_URL, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json'
     },
     body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      max_tokens: 4096,
+      model: LLM_MODEL,
+      [LLM_MAX_TOKENS_FIELD]: 4096,
       messages: [{ role: 'system', content: system }, ...history]
     })
   });

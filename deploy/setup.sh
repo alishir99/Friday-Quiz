@@ -49,7 +49,7 @@ echo "==> Secrets"
 if [ -f "$APP/.env" ]; then
   echo "    .env already exists, leaving it alone"
 else
-  printf 'DEEPSEEK_API_KEY=\nQUIZ_INVITE_CODE=\n' > "$APP/.env"
+  printf 'LLM_API_KEY=\nQUIZ_INVITE_CODE=\n' > "$APP/.env"
   chown quiz:quiz "$APP/.env"
   chmod 600 "$APP/.env"
   echo "    wrote an empty $APP/.env - fill it in next"
@@ -71,7 +71,7 @@ fi
 cat <<EOF
 
 Next:
-  1. sudo nano $APP/.env       set DEEPSEEK_API_KEY and QUIZ_INVITE_CODE
+  1. sudo nano $APP/.env       set LLM_API_KEY and QUIZ_INVITE_CODE
   2. sudo systemctl restart friday-quiz
   3. point a domain at this machine, then set up Caddy for HTTPS
 

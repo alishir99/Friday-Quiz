@@ -22,7 +22,7 @@ ExecStart=/usr/bin/node server.mjs
 Environment=PORT=8080
 Environment=QUIZ_BIND=127.0.0.1
 
-# DEEPSEEK_API_KEY and QUIZ_INVITE_CODE live in /opt/friday-quiz/.env, which
+# LLM_API_KEY and QUIZ_INVITE_CODE live in /opt/friday-quiz/.env, which
 # the app reads itself on startup. Nothing to declare here, and the secrets
 # stay out of `systemctl show`.
 
