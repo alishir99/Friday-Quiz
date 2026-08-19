@@ -75,42 +75,107 @@ const MEDIA_MIME = Object.fromEntries(
 
 /* database */
 
-const EMPTY = () => ({
-  schema: 6,
+/* One install, several teams. Everything a team owns lives inside its own
+   record: there is no expression anywhere that reaches another team's members
+   without naming that team, which is the point. A flat users[] with a teamId
+   on each row would read more easily but leaves every lookup one forgotten
+   filter away from another team's data. */
+
+const EMPTY_TEAM = (id, name) => ({
+  id,
+  name: name || 'Friday Quiz',
+  code: '',           // quoted at sign-up; both authorises and picks the team
+  masterId: null,     // quiz master: this team's admin. null until claimed
   users: [],          // { id, name, active, joinedAt, salt, hash }, or for a
                       // guest { id, name, active, joinedAt, guest: true }
   history: [],        // finished sessions
   upcoming: null,     // { id, date, quizMasterId, topicPickerId, reason, topic, quiz }
   live: null,         // running game
-  adminId: null,      // fixed person, not weekly-rotating; null until someone claims it
-  inviteCode: '',     // what new accounts must quote; the admin can change it in the app
   revealMode: 'end',  // 'end' or 'each'; what the next game starts with
-  rules: ''           // free text, editable by the admin only
+  rules: '',          // free text, editable by the quiz master only
+  createdAt: new Date().toISOString()
+});
+
+const EMPTY = () => ({
+  schema: 7,
+  adminId: null,      // site admin, over the whole install. null until claimed
+  teams: {},          // id -> team
+  mediaTeam: {}       // media id -> the team that uploaded it
 });
 
 let db = EMPTY();
-let tokens = new Map();          // token -> userId   (memory only; sign in again after a restart)
+// token -> { userId, teamId }   (memory only; sign in again after a restart)
+let tokens = new Map();
+
+/* An install from before teams existed: everything at the top level. Recognised
+   by shape rather than by `schema`, which was written but never read and so
+   cannot be trusted to be accurate. Runs once - after it, `teams` exists. */
+function isPreTeams(raw) {
+  return !!raw && Array.isArray(raw.users) && !raw.teams;
+}
+
+function migrateToTeams(raw) {
+  const id = uid();
+  const team = EMPTY_TEAM(id, 'Friday Quiz');
+  team.users = raw.users || [];
+  team.history = raw.history || [];
+  team.upcoming = raw.upcoming || null;
+  team.revealMode = raw.revealMode || 'end';
+  team.rules = raw.rules || '';
+  /* Never leave this empty when the old install had a code, or sign-up falls
+     open the moment the server restarts. */
+  team.code = String(raw.inviteCode || INVITE_CODE || '').trim();
+  // Whoever was admin keeps the team, and takes the install with it.
+  team.masterId = raw.adminId || null;
+  return { schema: 7, adminId: raw.adminId || null, teams: { [id]: team }, mediaTeam: {} };
+}
 
 async function loadDb() {
-  try {
-    const raw = JSON.parse(await readFile(DATA_FILE, 'utf8'));
-    db = { ...EMPTY(), ...raw };
-    db.live = null;              // never resume a half-finished game across a restart
-  } catch {
+  let raw = null;
+  // No file yet, or an unreadable one: start empty and fall through, so a
+  // fresh install still gets its first team below.
+  try { raw = JSON.parse(await readFile(DATA_FILE, 'utf8')); } catch { raw = null; }
+
+  if (!raw) {
     db = EMPTY();
-  }
-  /* The code used to live only in the environment. Adopt it once so an install
-     that was relying on QUIZ_INVITE_CODE keeps exactly the code it had -
-     without this, upgrading would quietly throw sign-up open. */
-  if (!db.inviteCode && INVITE_CODE) {
-    db.inviteCode = INVITE_CODE;
+  } else if (isPreTeams(raw)) {
+    // Keep the old file untouched beside the new one. Cheap, and the only way
+    // back if this ever goes wrong on someone's live install.
+    try { await writeFile(DATA_FILE + '.pre-teams', JSON.stringify(raw, null, 2), 'utf8'); } catch {}
+    db = migrateToTeams(raw);
     await persist();
+  } else {
+    db = { ...EMPTY(), ...raw };
   }
+
+  /* A brand-new install still needs somewhere to sign up. One team, ready to
+     go, so the app works out of the box exactly as it did before teams. */
+  let fresh = false;
+  if (!Object.keys(db.teams).length) {
+    const id = uid();
+    db.teams[id] = EMPTY_TEAM(id, 'Friday Quiz');
+    fresh = true;
+  }
+
+  for (const team of Object.values(db.teams)) {
+    // Never resume a half-finished game across a restart.
+    team.live = null;
+    /* The code used to live only in the environment. A fresh install with
+       QUIZ_INVITE_CODE set adopts it, so the documented variable still works. */
+    if (!team.code && INVITE_CODE) { team.code = INVITE_CODE; fresh = true; }
+  }
+
+  // Written after the loop, so the adopted code lands on disk with the team.
+  if (fresh) await persist();
 }
 
 let writeChain = Promise.resolve();
 function persist() {
-  const snapshot = JSON.stringify({ ...db, live: null }, null, 2);
+  // A running game is memory-only, so it is stripped from every team on the
+  // way to disk rather than from one top-level field as it used to be.
+  const teams = {};
+  for (const [id, t] of Object.entries(db.teams)) teams[id] = { ...t, live: null };
+  const snapshot = JSON.stringify({ ...db, teams }, null, 2);
   writeChain = writeChain.then(async () => {
     await mkdir(DATA_DIR, { recursive: true });
     const tmp = DATA_FILE + '.tmp';
@@ -123,21 +188,30 @@ function persist() {
 /* helpers */
 
 const uid = () => randomBytes(8).toString('hex');
-const userById = (id) => db.users.find((u) => u.id === id) || null;
-const isAdmin = (id) => !!db.adminId && db.adminId === id;
+
+const teamById = (id) => (id && db.teams[id]) || null;
+const teamList = () => Object.values(db.teams);
+
+/* Every lookup names its team. Passing the wrong one returns nothing rather
+   than somebody else's member, which is the failure mode we want. */
+const userById = (team, id) => (team && team.users.find((u) => u.id === id)) || null;
+
+// The install's owner, over every team.
+const isSiteAdmin = (id) => !!db.adminId && db.adminId === id;
+// This team's own admin.
+const isTeamMaster = (id, team) => !!team && !!team.masterId && team.masterId === id;
 // Guests play and score like everyone else, but never host and never admin.
-const isGuest = (id) => { const u = userById(id); return !!(u && u.guest); };
+const isGuest = (team, id) => { const u = userById(team, id); return !!(u && u.guest); };
 /* Removed, not deleted. Their past quizzes still show their name - only
    `active: false` is ever written, so nothing that points at them breaks.
    Older records have no flag at all, which counts as present. */
-const isRemoved = (id) => { const u = userById(id); return !!u && u.active === false; };
-const activeUsers = () => db.users.filter((u) => u.active !== false);
+const isRemoved = (team, id) => { const u = userById(team, id); return !!u && u.active === false; };
 // Names and the invite code are matched loosely; passwords never are.
 const sameCode = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
 /* The code in force. Stored in the database so the admin can change it from
    the app; the environment variable is only the starting value. */
-const inviteCode = () => String(db.inviteCode || INVITE_CODE || '').trim();
+const inviteCode = (team) => String((team && team.code) || '').trim();
 
 /* No O/0 or I/1/l - this gets read off a screen across a room and typed on a
    phone, and those are the pairs people get wrong. 31^6 is around 900 million,
@@ -376,9 +450,10 @@ function back(live, qCount) {
    played. db.upcoming.quiz is null once the week has rolled over, so once
    the result is committed the frozen count on live.final is the only
    accurate source left. */
-function liveQuestionCount(live) {
+function liveQuestionCount(team, live) {
   if (live && live.final) return live.final.questionCount;
-  return (db.upcoming && db.upcoming.quiz && db.upcoming.quiz.questions.length) || QUESTION_COUNT;
+  const up = team && team.upcoming;
+  return (up && up.quiz && up.quiz.questions.length) || QUESTION_COUNT;
 }
 
 const answersRevealed = (live) => !!live && ['gap', 'a', 'tba', 'board', 'roles'].includes(live.phase);
@@ -406,22 +481,22 @@ function scoreFor(userId, quiz, live) {
   return score;
 }
 
-function rankLive() {
-  const { live } = db;
-  // Once the week is committed the ranking is frozen. db.upcoming has already
+function rankLive(team) {
+  const live = team && team.live;
+  // Once the week is committed the ranking is frozen. upcoming has already
   // rolled over to a blank next Friday and can no longer be re-scored.
   if (live && live.final) return live.final.ranking;
-  const quiz = db.upcoming && db.upcoming.quiz;
+  const quiz = team.upcoming && team.upcoming.quiz;
   if (!quiz) return [];
   const tieAnswer = Number(quiz.tieBreaker.answer);
   const hosted = {};
-  db.history.forEach((s) => { hosted[s.quizMasterId] = (hosted[s.quizMasterId] || 0) + 1; });
+  team.history.forEach((s) => { hosted[s.quizMasterId] = (hosted[s.quizMasterId] || 0) + 1; });
 
-  const masterId = db.upcoming.quizMasterId;
+  const masterId = team.upcoming.quizMasterId;
   const rows = live.players
     .filter((id) => id !== masterId)
     .map((id) => {
-      const u = userById(id);
+      const u = userById(team, id);
       const guess = live.tieGuesses[id];
       const diff = (guess === undefined || guess === null) ? Infinity : Math.abs(Number(guess) - tieAnswer);
       return {
@@ -450,8 +525,8 @@ function rankLive() {
 
 /* Everyone's tiebreaker guess, closest first, so the room can see who was
    nearest. Only ever built once the answer is on the screen. */
-function tieRows() {
-  const live = db.live;
+function tieRows(team) {
+  const live = team && team.live;
   if (!live) return null;
 
   if (live.final) {
@@ -462,15 +537,15 @@ function tieRows() {
     })).sort(byNearest);
   }
 
-  const quiz = db.upcoming && db.upcoming.quiz;
+  const quiz = team.upcoming && team.upcoming.quiz;
   if (!quiz) return null;
   const answer = Number(quiz.tieBreaker.answer);
-  const masterId = db.upcoming.quizMasterId;
+  const masterId = team.upcoming.quizMasterId;
 
   return live.players
     .filter((id) => id !== masterId)
     .map((id) => {
-      const u = userById(id);
+      const u = userById(team, id);
       const raw = live.tieGuesses[id];
       const guess = (raw === undefined || raw === null) ? null : Number(raw);
       return {
@@ -490,22 +565,22 @@ function byNearest(a, b) {
   return a.name.localeCompare(b.name);
 }
 
-function deriveRoles(rows) {
+function deriveRoles(team, rows) {
   // A guest can finish last without inheriting next week's quiz - they are
   // here for one night and may never come back.
-  const eligible = rows.filter((r) => !isGuest(r.userId) && !isRemoved(r.userId));
+  const eligible = rows.filter((r) => !isGuest(team, r.userId) && !isRemoved(team, r.userId));
   if (!eligible.length) {
     // Only guests played. Leave next week exactly as it stands rather than
     // handing the quiz to someone who cannot write it.
     return {
-      quizMasterId: db.upcoming ? db.upcoming.quizMasterId : null,
-      topicPickerId: db.upcoming ? db.upcoming.topicPickerId : null,
+      quizMasterId: team.upcoming ? team.upcoming.quizMasterId : null,
+      topicPickerId: team.upcoming ? team.upcoming.topicPickerId : null,
       reason: { master: 'No one new to hand it to', picker: 'No one new to hand it to' }
     };
   }
   const last = eligible[eligible.length - 1];
   const second = eligible.length > 1 ? eligible[eligible.length - 2] : eligible[0];
-  const qCount = liveQuestionCount(db.live);
+  const qCount = liveQuestionCount(team, team.live);
   return {
     quizMasterId: last.userId,
     topicPickerId: second.userId,
@@ -518,8 +593,8 @@ function deriveRoles(rows) {
 
 /* How many of the answers shown so far this player got right. Bounded by
    `revealed`, so it can never run ahead of what is on the screen. */
-function myScoreSoFar(live, userId, revealed) {
-  const quiz = db.upcoming && db.upcoming.quiz;
+function myScoreSoFar(team, live, userId, revealed) {
+  const quiz = team.upcoming && team.upcoming.quiz;
   const upTo = Math.min(revealed || 0, quiz ? quiz.questions.length : 0);
   if (!live || !quiz || upTo <= 0) return { right: 0, of: 0 };
   const mine = live.answers[userId] || {};
@@ -555,15 +630,17 @@ function visibleQuiz(quiz, canSeeAnswers, canSeeTopic, revealed, tieRevealed) {
   };
 }
 
-function stateFor(userId) {
-  const isMaster = !!db.upcoming && db.upcoming.quizMasterId === userId;
-  const isPicker = !!db.upcoming && db.upcoming.topicPickerId === userId;
-  const live = db.live;
+function stateFor(userId, team) {
+  const up = team.upcoming;
+  const isMaster = !!up && up.quizMasterId === userId;
+  const isPicker = !!up && up.topicPickerId === userId;
+  const live = team.live;
   // In 'each' mode answersRevealed() is true from the first answer onwards, so
   // it can no longer be the gate on its own - revealed counts the questions
   // that are actually done, and the rest stay redacted.
   const canSeeAnswers = isMaster || (revealMode(live) !== 'each' && answersRevealed(live));
-  const revealed = isMaster ? liveQuestionCount(live) : revealedCount(live, liveQuestionCount(live));
+  const qCount = liveQuestionCount(team, live);
+  const revealed = isMaster ? qCount : revealedCount(live, qCount);
   const tieRevealed = isMaster || (!!live && ['tba', 'board', 'roles'].includes(live.phase));
   // The topic is a surprise for the rest of the team: the picker chose it and
   // the quiz master has to write to it, nobody else needs to know. It stops
@@ -572,34 +649,38 @@ function stateFor(userId) {
   // sharing their screen and waiting for people to scan in.
   const canSeeTopic = isMaster || isPicker || (!!live && live.phase !== 'lobby');
 
-  const online = onlineIds();
+  const online = onlineIds(team.id);
   const out = {
-    users: db.users.map((u) => ({ id: u.id, name: u.name, active: u.active, guest: !!u.guest, online: online.has(u.id) })),
+    team: { id: team.id, name: team.name },
+    users: team.users.map((u) => ({ id: u.id, name: u.name, active: u.active, guest: !!u.guest, online: online.has(u.id) })),
     /* Every past quiz's questions used to ride along here - and this whole
        object is rebuilt and pushed to every connected phone on every answer.
        After a year that was a megabyte per player per keystroke. The list and
        the all-time table only need the rankings; the questions are fetched
        from /api/history/<id>/quiz when someone actually opens one. */
-    history: db.history.map(({ quiz, ...rest }) => ({
+    history: team.history.map(({ quiz, ...rest }) => ({
       ...rest,
       questionCount: quiz && quiz.questions ? quiz.questions.length : QUESTION_COUNT
     })),
-    adminId: db.adminId,
+    // The team's own admin. `siteAdmin` is a flag, not an id: who runs the
+    // whole install is nobody else's business.
+    adminId: team.masterId,
+    siteAdmin: isSiteAdmin(userId),
     /* Members can read it, so anyone on the team can invite someone. Guests
        cannot: the code is what turns a one-night nickname into a permanent
        account, and handing it to them would defeat the point of having it. */
-    inviteCode: isGuest(userId) ? null : (inviteCode() || ''),
-    rules: db.rules,
+    inviteCode: isGuest(team, userId) ? null : (inviteCode(team) || ''),
+    rules: team.rules,
     // What the next game will do, set from the dashboard before kick-off.
-    revealMode: REVEAL_MODES.includes(db.revealMode) ? db.revealMode : 'end',
-    upcoming: db.upcoming ? {
-      ...db.upcoming,
-      date: effectiveDate(db.upcoming.date),
-      topic: canSeeTopic ? db.upcoming.topic : '',
+    revealMode: REVEAL_MODES.includes(team.revealMode) ? team.revealMode : 'end',
+    upcoming: up ? {
+      ...up,
+      date: effectiveDate(up.date),
+      topic: canSeeTopic ? up.topic : '',
       // Everyone still sees *that* a topic has been picked, just not what it is.
-      topicSet: !!String(db.upcoming.topic || '').trim(),
-      quiz: visibleQuiz(db.upcoming.quiz, canSeeAnswers, canSeeTopic, revealed, tieRevealed),
-      quizReady: quizReady(db.upcoming.quiz)
+      topicSet: !!String(up.topic || '').trim(),
+      quiz: visibleQuiz(up.quiz, canSeeAnswers, canSeeTopic, revealed, tieRevealed),
+      quizReady: quizReady(up.quiz)
     } : null,
     live: null,
     me: userId
@@ -607,9 +688,9 @@ function stateFor(userId) {
 
   if (live) {
     const mine = live.answers[userId] || {};
-    const masterId = live.final ? live.final.quizMasterId : (db.upcoming && db.upcoming.quizMasterId);
+    const masterId = live.final ? live.final.quizMasterId : (up && up.quizMasterId);
     const others = live.players.filter((p) => p !== masterId);
-    const ranking = ['board', 'roles'].includes(live.phase) ? rankLive() : null;
+    const ranking = ['board', 'roles'].includes(live.phase) ? rankLive(team) : null;
 
     out.live = {
       id: live.id,
@@ -617,7 +698,7 @@ function stateFor(userId) {
       index: live.index,
       // Held back in the lobby the same way the answers are - a player with
       // devtools should not be able to read it off the wire either.
-      topic: canSeeTopic ? (live.final ? live.final.topic : (db.upcoming ? db.upcoming.topic : '')) : '',
+      topic: canSeeTopic ? (live.final ? live.final.topic : (up ? up.topic : '')) : '',
       quizMasterId: masterId,
       players: live.players,
       answeredCount: others.filter((p) => (live.answers[p] || {})[live.index] !== undefined).length,
@@ -630,14 +711,14 @@ function stateFor(userId) {
          before the reveal - which is the whole thing 'end' mode exists to stop.
          `of` is how many have been revealed, so the client can tell a score of
          nothing yet from a genuine nought. */
-      myScore: myScoreSoFar(live, userId, revealed),
+      myScore: myScoreSoFar(team, live, userId, revealed),
       // Held back until the tiebreaker answer is up, like the answers are.
-      tieRows: ['tba', 'board', 'roles'].includes(live.phase) ? tieRows() : null,
+      tieRows: ['tba', 'board', 'roles'].includes(live.phase) ? tieRows(team) : null,
       ranking,
       nextRoles: live.phase === 'roles'
-        ? (live.final ? live.final.roles : (live.roleOverride || deriveRoles(rankLive())))
+        ? (live.final ? live.final.roles : (live.roleOverride || deriveRoles(team, rankLive(team))))
         : null,
-      questionCount: liveQuestionCount(live),
+      questionCount: qCount,
       reveal: revealMode(live),
       committed: !!live.committed
     };
@@ -647,20 +728,26 @@ function stateFor(userId) {
 
 /* real-time push (SSE) */
 
-const clients = new Set();       // { res, userId }, one per open tab
+const clients = new Set();       // { res, userId, teamId }, one per open tab
 
 // Who has a live connection right now, not "whose account still exists".
 // A person can have several tabs open; they only count once.
-function onlineIds() {
+function onlineIds(teamId) {
   const ids = new Set();
-  for (const c of clients) ids.add(c.userId);
+  for (const c of clients) if (c.teamId === teamId) ids.add(c.userId);
   return ids;
 }
 
-function broadcast() {
+/* The one place a push leaves the server. Every caller names the team it is
+   pushing about, and clients outside it are never written to - twenty call
+   sites each remembering to filter is how one team ends up watching another
+   team's quiz. Passing nothing is a bug, not "send to everyone". */
+function broadcast(team) {
+  if (!team || !team.id) throw new Error('broadcast() needs a team');
   for (const c of clients) {
+    if (c.teamId !== team.id) continue;
     try {
-      c.res.write(`data: ${JSON.stringify(stateFor(c.userId))}\n\n`);
+      c.res.write(`data: ${JSON.stringify(stateFor(c.userId, team))}\n\n`);
     } catch {
       clients.delete(c);
     }
@@ -716,6 +803,9 @@ function cookieToken(req) {
   const hit = raw.split(';').map((s) => s.trim()).find((s) => s.startsWith('fq_token='));
   return hit ? decodeURIComponent(hit.slice('fq_token='.length)) : null;
 }
+/* A session is a user *and* the team they signed into. One team per account,
+   so this is decided once at sign-in and never changes for the life of the
+   token. Tokens are memory-only, so there is nothing to migrate. */
 const whoami = (req) => tokens.get(cookieToken(req)) || null;
 
 /* Behind a TLS proxy the app itself still speaks plain HTTP, so the header is
@@ -724,22 +814,22 @@ const whoami = (req) => tokens.get(cookieToken(req)) || null;
 const isHttps = (req) =>
   String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 
-function setTokenCookie(userId, secure) {
+function setTokenCookie(userId, teamId, secure) {
   const token = randomBytes(24).toString('hex');
-  tokens.set(token, userId);
+  tokens.set(token, { userId, teamId });
   return `fq_token=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 180}`
     + (secure ? '; Secure' : '');
 }
 
 /* Make sure there is always something for the next Friday. */
-function ensureUpcoming() {
-  if (db.upcoming) return;
+function ensureUpcoming(team) {
+  if (!team || team.upcoming) return;
   // Seed from members only - a guest who happens to arrive first should not
   // end up owning the first Friday.
-  const members = db.users.filter((u) => !u.guest && u.active !== false);
+  const members = team.users.filter((u) => !u.guest && u.active !== false);
   if (members.length < 2) return;
   const [a, b] = members;
-  db.upcoming = {
+  team.upcoming = {
     id: uid(), date: nextFriday(), quizMasterId: a.id, topicPickerId: b.id,
     reason: { master: 'First quiz of the season', picker: 'First quiz of the season' },
     topic: '', quiz: null
@@ -749,13 +839,20 @@ function ensureUpcoming() {
 /* routes */
 
 async function api(req, res, path) {
-  const me = whoami(req);
-  const requireUser = () => { if (!me) { json(res, 401, { error: 'Please sign in' }); return null; } return me; };
-  const isMaster = () => !!db.upcoming && db.upcoming.quizMasterId === me;
+  const session = whoami(req);
+  const me = session ? session.userId : null;
+  /* The team this request is about. Everything below reads it rather than any
+     global, so a handler cannot accidentally act on somebody else's team. */
+  const team = session ? teamById(session.teamId) : null;
+  const requireUser = () => {
+    if (!me || !team) { json(res, 401, { error: 'Please sign in' }); return null; }
+    return me;
+  };
+  const isMaster = () => !!team && !!team.upcoming && team.upcoming.quizMasterId === me;
   // Whoever started the running game keeps the controls, even after the
   // results are saved and the role has already passed to someone else.
-  const runsLive = () => !!db.live &&
-    me === (db.live.final ? db.live.final.quizMasterId : (db.upcoming && db.upcoming.quizMasterId));
+  const runsLive = () => !!team && !!team.live &&
+    me === (team.live.final ? team.live.final.quizMasterId : (team.upcoming && team.upcoming.quizMasterId));
 
   /* Accounts */
 
@@ -769,34 +866,58 @@ async function api(req, res, path) {
     const pass = String(password || '');
     if (!clean) return json(res, 400, { error: 'Enter your name' });
     if (pass.length < MIN_PASSWORD) return json(res, 400, { error: `Password must be at least ${MIN_PASSWORD} characters` });
-    /* Guests are invisible here on purpose. A guest record has no hash, so
-       matching one would drop into the "account predates passwords" branch
-       below and adopt it - handing over an account without ever asking for
-       the invite code, since that is only checked for brand-new names. */
-    let user = db.users.find((u) => !u.guest && u.name.toLowerCase() === clean.toLowerCase());
+    /* Which team? Names are only unique within one, so the same "Ali" can
+       exist in several. Look for them everywhere: one match signs straight in,
+       which is the ordinary case. Several, and we have to ask which team -
+       the code settles it. Guests are invisible here on purpose: a guest record
+       has no hash, so matching one would drop into the "account predates
+       passwords" branch below and adopt it, handing over an account without
+       ever asking for the code. */
+    const named = (t) => t.users.find((u) => !u.guest && u.name.toLowerCase() === clean.toLowerCase());
+    let hits = teamList().filter(named);
+    const quoted = String(invite || '').trim();
+    if (quoted) hits = hits.filter((t) => sameCode(quoted, t.code));
+
+    if (hits.length > 1) {
+      return json(res, 409, {
+        error: 'That name is on more than one team. Add your team’s code.',
+        needTeam: true
+      });
+    }
+
+    let signInTeam = hits[0] || null;
+    let user = signInTeam ? named(signInTeam) : null;
+
     if (!user) {
-      /* On a public URL an open sign-up is the whole perimeter: anyone who
-         finds the address could make an account and, if nobody has claimed it
-         yet, take admin. Signing in to an existing account never needs the
-         code, so the team only sees this once. */
-      /* Case and stray spaces are forgiven. It is a phrase passed round by
-         word of mouth, so it arrives capitalised however the person who typed
-         it felt at the time - and it is a gate against strangers, not a
-         password. Passwords stay exactly as typed. */
-      if (inviteCode() && !sameCode(invite, inviteCode())) {
+      /* Nobody by that name, so this is a new account and the code decides
+         which team it joins. On a public URL sign-up is the whole perimeter:
+         without a code anyone who finds the address could make an account and,
+         if nobody has claimed it yet, take admin.
+
+         Case and stray spaces are forgiven - it is a phrase passed round by
+         word of mouth and arrives capitalised however the sender felt. It is a
+         gate against strangers, not a password. Passwords stay exact. */
+      const gated = teamList().filter((t) => inviteCode(t));
+      signInTeam = quoted ? teamList().find((t) => sameCode(quoted, t.code)) : null;
+      if (!signInTeam) {
+        // A single team with no code set at all means an open install.
+        const open = teamList().filter((t) => !inviteCode(t));
+        if (!gated.length && open.length === 1) signInTeam = open[0];
+      }
+      if (!signInTeam) {
         return json(res, 403, {
-          error: String(invite || '').trim()
-            ? 'That invite code is not right.'
-            : 'New here? You need the invite code from whoever runs the quiz.',
+          error: quoted
+            ? 'That code does not match any team.'
+            : 'New here? You need the code from whoever runs your quiz.',
           needInvite: true
         });
       }
       const { salt, hash } = hashPassword(pass);
       user = { id: uid(), name: clean, active: true, joinedAt: new Date().toISOString(), salt, hash };
-      db.users.push(user);
-      ensureUpcoming();
+      signInTeam.users.push(user);
+      ensureUpcoming(signInTeam);
       await persist();
-      broadcast();
+      broadcast(signInTeam);
     } else if (!user.hash) {
       // Account predates passwords: whatever is typed the first time becomes it.
       Object.assign(user, hashPassword(pass));
@@ -814,7 +935,7 @@ async function api(req, res, path) {
       return json(res, 401, { error: 'Wrong password for "' + user.name + '". If that is not you, sign in with a different name (e.g. add a last initial).' });
     }
     return json(res, 200, { ok: true, me: user.id },
-      { 'set-cookie': setTokenCookie(user.id, isHttps(req)) });
+      { 'set-cookie': setTokenCookie(user.id, signInTeam.id, isHttps(req)) });
   }
 
   /* A nickname and nothing else, for someone who is here for one night. No
@@ -822,24 +943,37 @@ async function api(req, res, path) {
      is happening. They play and score like anyone else but never host and
      never take admin - see isGuest() at the top. */
   if (path === '/api/join' && req.method === 'POST') {
-    const { name } = await readBody(req);
+    const { name, invite } = await readBody(req);
     const clean = String(name || '').trim().slice(0, MAX_NAME);
     if (!clean) return json(res, 400, { error: 'Enter a name' });
+
+    /* Which quiz are they walking into? A code names it. With only one team on
+       the install there is nothing to choose, so it stays as open as it was. */
+    const quoted = String(invite || '').trim();
+    const all = teamList();
+    const guestTeam = quoted ? all.find((t) => sameCode(quoted, t.code)) : (all.length === 1 ? all[0] : null);
+    if (!guestTeam) {
+      return json(res, 403, {
+        error: quoted ? 'That code does not match any team.' : 'You need the code for tonight’s quiz.',
+        needTeam: true
+      });
+    }
+
     // Guests may share a name with each other, but not with the team - a
     // stranger should not be able to appear on the board as a teammate.
-    if (db.users.some((u) => !u.guest && u.active !== false && u.name.toLowerCase() === clean.toLowerCase())) {
+    if (guestTeam.users.some((u) => !u.guest && u.active !== false && u.name.toLowerCase() === clean.toLowerCase())) {
       return json(res, 409, { error: 'Someone on the team goes by that name. Try another.' });
     }
     /* Always a fresh account, even for a repeated name. With no password
        there is no way to prove you are the same guest as last time, so the
        safe reading of "Sam joins again" is that it is a different Sam. */
     const user = { id: uid(), name: clean, active: true, guest: true, joinedAt: new Date().toISOString() };
-    db.users.push(user);
-    ensureUpcoming();
+    guestTeam.users.push(user);
+    ensureUpcoming(guestTeam);
     await persist();
-    broadcast();
+    broadcast(guestTeam);
     return json(res, 200, { ok: true, me: user.id },
-      { 'set-cookie': setTokenCookie(user.id, isHttps(req)) });
+      { 'set-cookie': setTokenCookie(user.id, guestTeam.id, isHttps(req)) });
   }
 
   if (path === '/api/logout' && req.method === 'POST') {
@@ -851,7 +985,7 @@ async function api(req, res, path) {
   if (path === '/api/change-password' && req.method === 'POST') {
     if (!requireUser()) return;
     const { oldPassword, newPassword } = await readBody(req);
-    const user = userById(me);
+    const user = userById(team, me);
     if (!verifyPassword(String(oldPassword || ''), user.salt, user.hash)) {
       return json(res, 401, { error: 'Current password is wrong' });
     }
@@ -868,9 +1002,9 @@ async function api(req, res, path) {
      unreachable, nobody else can help a locked-out teammate back in. */
   if (path === '/api/reset-password' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can reset a password' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can reset a password' });
     const { userId } = await readBody(req);
-    const user = userById(userId);
+    const user = userById(team, userId);
     if (!user) return json(res, 404, { error: 'No such person' });
     const tempPassword = randomBytes(4).toString('hex');
     Object.assign(user, hashPassword(tempPassword));
@@ -883,10 +1017,13 @@ async function api(req, res, path) {
      then only that person can hand it to someone else. */
   if (path === '/api/admin/claim' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (isGuest(me)) return json(res, 403, { error: 'Guests cannot be admin' });
-    if (db.adminId) return json(res, 409, { error: 'There is already an admin' });
-    db.adminId = me;
-    await persist(); broadcast();
+    if (isGuest(team, me)) return json(res, 403, { error: 'Guests cannot be admin' });
+    if (team.masterId) return json(res, 409, { error: 'There is already an admin' });
+    // Quiz master of this team. The very first claim on a fresh install also
+    // takes the install itself - somebody has to be able to make more teams.
+    team.masterId = me;
+    if (!db.adminId) db.adminId = me;
+    await persist(); broadcast(team);
     return json(res, 200, { ok: true });
   }
 
@@ -894,18 +1031,18 @@ async function api(req, res, path) {
      set your own, or nothing to have one made up. */
   if (path === '/api/invite' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can change this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can change this' });
     const { code } = await readBody(req);
     const wanted = String(code == null ? '' : code).trim().slice(0, 80);
     if (code !== undefined && code !== null && !wanted) {
       // An explicit empty string means "let anyone sign up", which is a real
       // choice on a trusted network but worth being deliberate about.
-      db.inviteCode = '';
+      team.code = '';
     } else {
-      db.inviteCode = wanted || makeCode();
+      team.code = wanted || makeCode();
     }
-    await persist(); broadcast();
-    return json(res, 200, { ok: true, inviteCode: db.inviteCode });
+    await persist(); broadcast(team);
+    return json(res, 200, { ok: true, inviteCode: team.code });
   }
 
   /* Removing someone. A flag rather than a delete: every past quiz they played
@@ -914,51 +1051,52 @@ async function api(req, res, path) {
      points at them dangles, and putting them back is one click. */
   if (path === '/api/admin/set-active' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can do this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can do this' });
     const { userId, active } = await readBody(req);
-    const target = userById(userId);
+    const target = userById(team, userId);
     if (!target) return json(res, 400, { error: 'No such person' });
 
     if (active === false) {
       // Each of these would leave a job with nobody holding it.
       if (userId === me) return json(res, 400, { error: 'You cannot remove yourself' });
-      if (isAdmin(userId)) return json(res, 400, { error: 'Pass admin on first' });
-      if (db.upcoming && db.upcoming.quizMasterId === userId) {
+      if (isTeamMaster(userId, team)) return json(res, 400, { error: 'Pass admin on first' });
+      if (team.upcoming && team.upcoming.quizMasterId === userId) {
         return json(res, 409, { error: target.name + ' is writing the next quiz. Hand that over first.' });
       }
-      if (db.upcoming && db.upcoming.topicPickerId === userId) {
+      if (team.upcoming && team.upcoming.topicPickerId === userId) {
         return json(res, 409, { error: target.name + ' is picking the next topic. Hand that over first.' });
       }
       target.active = false;
       // Out of the room, and out of any game already running.
       for (const [token, uid_] of tokens) if (uid_ === userId) tokens.delete(token);
-      if (db.live) db.live.players = db.live.players.filter((p) => p !== userId);
+      if (team.live) team.live.players = team.live.players.filter((p) => p !== userId);
     } else {
       target.active = true;
     }
-    await persist(); broadcast();
+    await persist(); broadcast(team);
     return json(res, 200, { ok: true, active: target.active });
   }
 
   if (path === '/api/admin/transfer' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can do this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can do this' });
     const { userId } = await readBody(req);
-    if (!userById(userId)) return json(res, 400, { error: 'No such person' });
-    if (isGuest(userId)) return json(res, 400, { error: 'Guests cannot be admin' });
-    if (isRemoved(userId)) return json(res, 400, { error: 'That person has been removed' });
-    db.adminId = userId;
-    await persist(); broadcast();
+    if (!userById(team, userId)) return json(res, 400, { error: 'No such person' });
+    if (isGuest(team, userId)) return json(res, 400, { error: 'Guests cannot be admin' });
+    if (isRemoved(team, userId)) return json(res, 400, { error: 'That person has been removed' });
+    // Hands over this team. Who owns the install is a separate question.
+    team.masterId = userId;
+    await persist(); broadcast(team);
     return json(res, 200, { ok: true });
   }
 
   /* A page of house rules, visible to everyone, editable only by the admin. */
   if (path === '/api/rules' && req.method === 'POST') {
     if (!requireUser()) return;
-    if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can edit this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can edit this' });
     const { text } = await readBody(req);
-    db.rules = String(text || '').slice(0, MAX_RULES);
-    await persist(); broadcast();
+    team.rules = String(text || '').slice(0, MAX_RULES);
+    await persist(); broadcast(team);
     return json(res, 200, { ok: true });
   }
 
@@ -967,20 +1105,25 @@ async function api(req, res, path) {
   const pastQuiz = path.match(/^\/api\/history\/([a-f0-9]+)\/quiz$/);
   if (pastQuiz && req.method === 'GET') {
     if (!requireUser()) return;
-    const session = db.history.find((h) => h.id === pastQuiz[1]);
-    if (!session || !session.quiz) return json(res, 404, { error: 'No such quiz' });
-    return json(res, 200, { ok: true, quiz: session.quiz });
+    /* Searched inside this team only. It used to look across the whole
+       install, so any signed-in person could fetch any past quiz by id. */
+    const past = team.history.find((h) => h.id === pastQuiz[1]);
+    if (!past || !past.quiz) return json(res, 404, { error: 'No such quiz' });
+    return json(res, 200, { ok: true, quiz: past.quiz });
   }
 
   if (path === '/api/state' && req.method === 'GET') {
-    if (!me) return json(res, 200, { anonymous: true, anyUsers: db.users.length > 0 });
-    return json(res, 200, stateFor(me));
+    if (!me || !team) {
+      const anyUsers = teamList().some((t) => t.users.length > 0);
+      return json(res, 200, { anonymous: true, anyUsers });
+    }
+    return json(res, 200, stateFor(me, team));
   }
 
   /* Live updates */
 
   if (path === '/api/events') {
-    if (!me) return json(res, 401, { error: 'Please sign in' });
+    if (!me || !team) return json(res, 401, { error: 'Please sign in' });
     res.writeHead(200, {
       'content-type': 'text/event-stream',
       'cache-control': 'no-store',
@@ -988,15 +1131,15 @@ async function api(req, res, path) {
       'x-accel-buffering': 'no'
     });
     res.write('retry: 2000\n\n');
-    res.write(`data: ${JSON.stringify(stateFor(me))}\n\n`);
-    const client = { res, userId: me };
+    res.write(`data: ${JSON.stringify(stateFor(me, team))}\n\n`);
+    const client = { res, userId: me, teamId: team.id };
     clients.add(client);
     // Opening the app during a game is what joining means - this is what the
     // lobby counts. Once in, you stay in: a phone locking should not drop you.
-    if (db.live && !db.live.players.includes(me) && !isRemoved(me)) db.live.players.push(me);
-    broadcast();      // tell everyone else this person just came online
+    if (team.live && !team.live.players.includes(me) && !isRemoved(team, me)) team.live.players.push(me);
+    broadcast(team);      // tell everyone else this person just came online
     const beat = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
-    req.on('close', () => { clearInterval(beat); clients.delete(client); broadcast(); });
+    req.on('close', () => { clearInterval(beat); clients.delete(client); broadcast(team); });
     return;
   }
 
@@ -1005,13 +1148,13 @@ async function api(req, res, path) {
   if (path === '/api/topic' && req.method === 'POST') {
     if (!requireUser()) return;
     const { topic } = await readBody(req);
-    if (!db.upcoming) return json(res, 400, { error: 'Nothing scheduled' });
-    if (me !== db.upcoming.topicPickerId && !isMaster()) {
+    if (!team.upcoming) return json(res, 400, { error: 'Nothing scheduled' });
+    if (me !== team.upcoming.topicPickerId && !isMaster()) {
       return json(res, 403, { error: 'Only the topic picker can set this' });
     }
-    db.upcoming.topic = String(topic || '').trim();
-    if (db.upcoming.quiz) db.upcoming.quiz.topic = db.upcoming.topic;
-    await persist(); broadcast();
+    team.upcoming.topic = String(topic || '').trim();
+    if (team.upcoming.quiz) team.upcoming.quiz.topic = team.upcoming.topic;
+    await persist(); broadcast(team);
     return json(res, 200, { ok: true });
   }
 
@@ -1032,9 +1175,9 @@ async function api(req, res, path) {
       return { ...q, options, optionMedia, correct, media: cleanMedia(q.media) };
     });
     if (quiz.tieBreaker) quiz.tieBreaker.media = cleanMedia(quiz.tieBreaker.media);
-    db.upcoming.quiz = { ...quiz, authorId: me, topic: db.upcoming.topic };
-    await persist(); broadcast();
-    return json(res, 200, { ok: true, ready: quizReady(db.upcoming.quiz) });
+    team.upcoming.quiz = { ...quiz, authorId: me, topic: team.upcoming.topic };
+    await persist(); broadcast(team);
+    return json(res, 200, { ok: true, ready: quizReady(team.upcoming.quiz) });
   }
 
   /* Media upload. The body is the raw file, the type comes from the header,
@@ -1087,19 +1230,19 @@ async function api(req, res, path) {
     if (!requireUser()) return;
     // Deciding who does what next week is an admin call, not the weekly quiz
     // master's - those stay separate on purpose.
-    if (!isAdmin(me)) return json(res, 403, { error: 'Only the admin can change this' });
+    if (!isTeamMaster(me, team)) return json(res, 403, { error: 'Only the admin can change this' });
     const { quizMasterId, topicPickerId } = await readBody(req);
-    if (!db.upcoming) return json(res, 400, { error: 'Nothing scheduled' });
-    if (quizMasterId && !userById(quizMasterId)) return json(res, 400, { error: 'No such person' });
-    if (topicPickerId && !userById(topicPickerId)) return json(res, 400, { error: 'No such person' });
-    if (quizMasterId && isGuest(quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz maker' });
-    if (topicPickerId && isGuest(topicPickerId)) return json(res, 400, { error: 'A guest cannot pick the topic' });
-    if (quizMasterId && isRemoved(quizMasterId)) return json(res, 400, { error: 'That person has been removed' });
-    if (topicPickerId && isRemoved(topicPickerId)) return json(res, 400, { error: 'That person has been removed' });
-    if (quizMasterId) db.upcoming.quizMasterId = quizMasterId;
-    if (topicPickerId) db.upcoming.topicPickerId = topicPickerId;
-    db.upcoming.reason = { master: 'Set by hand', picker: 'Set by hand' };
-    await persist(); broadcast();
+    if (!team.upcoming) return json(res, 400, { error: 'Nothing scheduled' });
+    if (quizMasterId && !userById(team, quizMasterId)) return json(res, 400, { error: 'No such person' });
+    if (topicPickerId && !userById(team, topicPickerId)) return json(res, 400, { error: 'No such person' });
+    if (quizMasterId && isGuest(team, quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz maker' });
+    if (topicPickerId && isGuest(team, topicPickerId)) return json(res, 400, { error: 'A guest cannot pick the topic' });
+    if (quizMasterId && isRemoved(team, quizMasterId)) return json(res, 400, { error: 'That person has been removed' });
+    if (topicPickerId && isRemoved(team, topicPickerId)) return json(res, 400, { error: 'That person has been removed' });
+    if (quizMasterId) team.upcoming.quizMasterId = quizMasterId;
+    if (topicPickerId) team.upcoming.topicPickerId = topicPickerId;
+    team.upcoming.reason = { master: 'Set by hand', picker: 'Set by hand' };
+    await persist(); broadcast(team);
     return json(res, 200, { ok: true });
   }
 
@@ -1108,8 +1251,8 @@ async function api(req, res, path) {
   if (path === '/api/live/start' && req.method === 'POST') {
     if (!requireUser()) return;
     if (!isMaster()) return json(res, 403, { error: 'Only the quiz maker can start it' });
-    if (!quizReady(db.upcoming.quiz)) return json(res, 400, { error: 'The quiz is not finished yet' });
-    db.live = {
+    if (!quizReady(team.upcoming.quiz)) return json(res, 400, { error: 'The quiz is not finished yet' });
+    team.live = {
       id: uid(), phase: 'lobby', index: 0,
       /* Whoever has the app open right now is in the room. Anyone else is
          added the moment they connect, further down in /api/events.
@@ -1118,11 +1261,11 @@ async function api(req, res, path) {
          before anyone had turned up, growing by one for every guest who ever
          played. And not an empty array either - the people already sitting
          there waiting for you to press Start are exactly the ones playing. */
-      players: [...onlineIds()].filter((id) => !isRemoved(id)),
-      reveal: REVEAL_MODES.includes(db.revealMode) ? db.revealMode : 'end',
+      players: [...onlineIds(team.id)].filter((id) => !isRemoved(team, id)),
+      reveal: REVEAL_MODES.includes(team.revealMode) ? team.revealMode : 'end',
       answers: {}, tieGuesses: {}, startedAt: new Date().toISOString()
     };
-    broadcast();
+    broadcast(team);
     return json(res, 200, { ok: true });
   }
 
@@ -1134,46 +1277,46 @@ async function api(req, res, path) {
     if (!isMaster()) return json(res, 403, { error: 'Only the quiz maker decides this' });
     const { mode } = await readBody(req);
     if (!REVEAL_MODES.includes(mode)) return json(res, 400, { error: 'Unknown mode' });
-    db.revealMode = mode;
-    if (db.live) {
-      db.live.reveal = mode;
+    team.revealMode = mode;
+    if (team.live) {
+      team.live.reveal = mode;
       /* Switching mid-quiz can leave you on a step the new running order does
          not have - the gap only exists in 'end'. Nudge onto the nearest one
          that does rather than stranding the slides. */
-      if (mode === 'each' && db.live.phase === 'gap') { db.live.phase = 'a'; db.live.index = 0; }
+      if (mode === 'each' && team.live.phase === 'gap') { team.live.phase = 'a'; team.live.index = 0; }
     }
-    await persist(); broadcast();
+    await persist(); broadcast(team);
     return json(res, 200, { ok: true, mode });
   }
 
   if ((path === '/api/live/advance' || path === '/api/live/back') && req.method === 'POST') {
     if (!requireUser()) return;
     if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker controls the slides' });
-    if (!db.live) return json(res, 400, { error: 'Nothing running' });
-    (path.endsWith('advance') ? advance : back)(db.live, liveQuestionCount(db.live));
-    broadcast();
-    return json(res, 200, { ok: true, phase: db.live.phase, index: db.live.index });
+    if (!team.live) return json(res, 400, { error: 'Nothing running' });
+    (path.endsWith('advance') ? advance : back)(team.live, liveQuestionCount(team, team.live));
+    broadcast(team);
+    return json(res, 200, { ok: true, phase: team.live.phase, index: team.live.index });
   }
 
   if (path === '/api/live/answer' && req.method === 'POST') {
     if (!requireUser()) return;
     const { option } = await readBody(req);
-    const live = db.live;
+    const live = team.live;
     if (!live || live.phase !== 'q') return json(res, 409, { error: 'Not taking answers now' });
-    if (me === db.upcoming.quizMasterId) return json(res, 403, { error: 'You wrote this one' });
+    if (me === team.upcoming.quizMasterId) return json(res, 403, { error: 'You wrote this one' });
     if (!live.players.includes(me)) live.players.push(me);
     live.answers[me] = live.answers[me] || {};
     live.answers[me][live.index] = Number(option);
-    broadcast();
+    broadcast(team);
     return json(res, 200, { ok: true });
   }
 
   if (path === '/api/live/tiebreak' && req.method === 'POST') {
     if (!requireUser()) return;
     const { value } = await readBody(req);
-    const live = db.live;
+    const live = team.live;
     if (!live || live.phase !== 'tb') return json(res, 409, { error: 'Not taking guesses now' });
-    if (me === db.upcoming.quizMasterId) return json(res, 403, { error: 'You wrote this one' });
+    if (me === team.upcoming.quizMasterId) return json(res, 403, { error: 'You wrote this one' });
     /* One guess each. Unlike the questions, where changing your mind before the
        next slide is harmless, the tiebreaker decides a tie - letting someone
        resubmit after seeing the counter climb would be a second bite. The
@@ -1185,7 +1328,7 @@ async function api(req, res, path) {
     if (!Number.isFinite(n)) return json(res, 400, { error: 'That is not a number' });
     if (!live.players.includes(me)) live.players.push(me);
     live.tieGuesses[me] = n;
-    broadcast();
+    broadcast(team);
     return json(res, 200, { ok: true });
   }
 
@@ -1193,29 +1336,29 @@ async function api(req, res, path) {
     if (!requireUser()) return;
     if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker can change this' });
     const { quizMasterId, topicPickerId } = await readBody(req);
-    if (!db.live) return json(res, 400, { error: 'Nothing running' });
-    if (quizMasterId && isGuest(quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz maker' });
-    if (topicPickerId && isGuest(topicPickerId)) return json(res, 400, { error: 'A guest cannot pick the topic' });
-    db.live.roleOverride = {
+    if (!team.live) return json(res, 400, { error: 'Nothing running' });
+    if (quizMasterId && isGuest(team, quizMasterId)) return json(res, 400, { error: 'A guest cannot be quiz maker' });
+    if (topicPickerId && isGuest(team, topicPickerId)) return json(res, 400, { error: 'A guest cannot pick the topic' });
+    team.live.roleOverride = {
       quizMasterId, topicPickerId,
       reason: { master: 'Chosen by the quiz maker', picker: 'Chosen by the quiz maker' }
     };
-    broadcast();
+    broadcast(team);
     return json(res, 200, { ok: true });
   }
 
   if (path === '/api/live/finish' && req.method === 'POST') {
     if (!requireUser()) return;
     if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker can finish it' });
-    const live = db.live;
+    const live = team.live;
     if (!live) return json(res, 400, { error: 'Nothing running' });
     if (live.committed) return json(res, 200, { ok: true });
 
-    const rows = rankLive();
-    const roles = live.roleOverride || deriveRoles(rows);
-    const u = db.upcoming;
+    const rows = rankLive(team);
+    const roles = live.roleOverride || deriveRoles(team, rows);
+    const u = team.upcoming;
 
-    db.history.push({
+    team.history.push({
       id: live.id,
       // The day it was played, which is not the day it was booked for if it
       // slipped. playedAt below keeps the exact moment either way.
@@ -1246,20 +1389,20 @@ async function api(req, res, path) {
     // as well, and every week after that.
     const after = new Date(effectiveDate(u.date) + 'T12:00:00');
     after.setDate(after.getDate() + 1);
-    db.upcoming = {
+    team.upcoming = {
       id: uid(), date: nextFriday(after),
       quizMasterId: roles.quizMasterId, topicPickerId: roles.topicPickerId,
       reason: roles.reason, topic: '', quiz: null
     };
-    await persist(); broadcast();
+    await persist(); broadcast(team);
     return json(res, 200, { ok: true });
   }
 
   if (path === '/api/live/stop' && req.method === 'POST') {
     if (!requireUser()) return;
     if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker can stop it' });
-    db.live = null;
-    broadcast();
+    team.live = null;
+    broadcast(team);
     return json(res, 200, { ok: true });
   }
 
@@ -1326,8 +1469,9 @@ server.listen(PORT, BIND, () => {
   console.log('    Big screen:   http://localhost:' + PORT);
   if (BIND === '0.0.0.0') lan.forEach((ip) => console.log('    Phones:       http://' + ip + ':' + PORT));
   console.log('\n    Data:   ' + DATA_FILE);
-  console.log('    Signup: ' + (inviteCode()
-    ? 'invite code ' + inviteCode() + '  (change it on the Team page)'
-    : 'open (no invite code set)'));
+  for (const t of teamList()) {
+    console.log('    Team:   ' + t.name + '  ·  '
+      + (inviteCode(t) ? 'code ' + inviteCode(t) : 'open (no code set)'));
+  }
   console.log('    Stop with Ctrl+C\n');
 });
