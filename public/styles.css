@@ -1319,3 +1319,15 @@ audio.media-player { height: 44px; }
   color: var(--ink-2);
 }
 .list-row.is-mine { background: var(--surface-2); border-radius: var(--r-sm); }
+
+/* A button that is deliberately unavailable, with the reason on hover. Kept
+   legible rather than ghosted away: it is information, not clutter. */
+.btn.is-off, .btn.is-off:hover {
+  opacity: .45; cursor: not-allowed; background: transparent;
+}
+
+/* Which team a typed code belongs to, on the sign-in card. */
+.auth-team {
+  margin-top: 8px; font-size: 14px; font-weight: 600;
+  color: var(--good); text-align: center;
+}

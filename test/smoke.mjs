@@ -738,3 +738,39 @@ test('a quiz master cannot reach into the other team', async () => {
   const after = await stateAs('aliB');
   assert.equal(after.users.find((u) => u.id === victim.id).active, true);
 });
+
+test('a team can be renamed, and a code says whose team it is', async () => {
+  /* A team the site admin made has nobody running it until someone claims it,
+     the same way the very first team works. */
+  assert.equal((await call('/api/admin/claim', { method: 'POST', as: 'aliB' })).status, 200);
+
+  const before = await stateAs('aliB');
+  const renamed = await call('/api/teams/name', { method: 'POST', body: { name: 'The Badgers' }, as: 'aliB' });
+  assert.equal(renamed.status, 200);
+  assert.equal((await stateAs('aliB')).team.name, 'The Badgers');
+  assert.equal((await stateAs('ali')).team.name, before.team.name === 'The Badgers' ? before.team.name : 'Friday Quiz',
+    'the other team is untouched');
+
+  // Someone who is not the quiz master cannot rename it.
+  const nope = await call('/api/teams/name', { method: 'POST', body: { name: 'Hijacked' }, as: 'bo' });
+  assert.equal(nope.status, 403);
+
+  // And a code tells you whose quiz you are about to join, before signing in.
+  const known = await call('/api/team-for-code', { method: 'POST', body: { code: CODE_B } });
+  assert.equal(known.body.name, 'The Badgers', 'answered without being signed in');
+
+  const unknown = await call('/api/team-for-code', { method: 'POST', body: { code: 'not-a-real-code' } });
+  assert.equal(unknown.body.name, null, 'and gives nothing away for a wrong code');
+});
+
+test('removing is refused for whoever holds a job, with a reason', async () => {
+  const b = await stateAs('aliB');
+  const picker = b.upcoming && b.upcoming.topicPickerId;
+  assert.ok(picker, 'team two has a rota');
+
+  const res = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: picker, active: false }, as: 'aliB'
+  });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /picking the next topic/, 'and says why, by name');
+});

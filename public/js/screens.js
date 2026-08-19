@@ -28,6 +28,8 @@
     });
     var inviteField = el('div.stack', { hidden: true, style: { gap: '12px' } }, [invite]);
     var err = el('p.auth-err', { hidden: true });
+    // Filled in once a code is recognised, so nobody joins the wrong quiz.
+    var whose = el('p.auth-team', { hidden: true });
     var btn = el('button.btn.primary.lg.block', { type: 'button', text: 'Continue' });
 
     /* Someone who is here for one night should not have to invent a password
@@ -41,7 +43,25 @@
       style: { marginTop: '12px' }, text: 'Just visiting? Join as a guest' });
     var memberOnly = el('div.stack', { style: { gap: '12px' } }, [pass]);
     // One input, parked in whichever half of the form is currently showing.
-    var codeSlot = el('div.stack', { style: { gap: '12px' } }, [inviteField]);
+    var codeSlot = el('div.stack', { style: { gap: '12px' } }, [inviteField, whose]);
+
+    /* A code names a team. Look it up as they type so they can see whose quiz
+       they are about to join - a wrong code is easier to notice here than
+       after signing up somewhere unexpected. */
+    var lookingUp = null;
+    function showTeamForCode() {
+      var code = invite.value.trim();
+      clearTimeout(lookingUp);
+      if (!code) { whose.hidden = true; return; }
+      lookingUp = setTimeout(function () {
+        QC.net.teamForCode(code).then(function (r) {
+          if (invite.value.trim() !== code) return;      // they typed on
+          whose.hidden = !r.name;
+          whose.textContent = r.name ? 'Joining ' + r.name : '';
+        }).catch(function () { whose.hidden = true; });
+      }, 250);
+    }
+    invite.addEventListener('input', showTeamForCode);
 
     function setMode(asGuest) {
       guest = asGuest;
@@ -325,7 +345,11 @@
 
     return el('div.stack', [
       el('div.page-head', [
-        el('h1', { text: (s.team && s.team.name) || 'The team' }),
+        el('div.row', { style: { alignItems: 'baseline', gap: '12px' } }, [
+          el('h1', { text: (s.team && s.team.name) || 'The team' }),
+          QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button', text: 'Rename',
+            onclick: renameTeam }) : null
+        ]),
         el('p.sub', { text: members.length + ' account' + (members.length === 1 ? '' : 's')
           + (onlineCount ? ' · ' + onlineCount + ' online now' : '') })
       ]),
@@ -346,8 +370,17 @@
           s.upcoming && s.upcoming.topicPickerId === u.id ? el('span.pill', { text: 'Topic picker' }) : null,
           QC.isAdmin() && u.id !== s.me ? el('button.btn.quiet.sm', { type: 'button', text: 'Reset password',
             onclick: function () { resetPassword(u); } }) : null,
-          QC.isAdmin() && u.id !== s.me ? el('button.btn.quiet.sm', { type: 'button', text: 'Remove',
-            onclick: function () { removeMember(u); } }) : null
+          QC.isAdmin() && u.id !== s.me ? (function () {
+            /* Removing whoever is down to write or pick next week would leave
+               that job with nobody holding it. Saying so on the button beats
+               letting them click and reading it in a toast. */
+            var why = blockedFrom(u);
+            return el('button.btn.quiet.sm' + (why ? '.is-off' : ''), {
+              type: 'button', text: 'Remove', disabled: !!why,
+              title: why || ('Remove ' + u.name + ' from the team'),
+              onclick: function () { removeMember(u); }
+            });
+          })() : null
         ]);
       })),
 
@@ -527,6 +560,27 @@
           QC.render();
         }).catch(function (e) { QC.toast(e.message); });
       });
+    }
+
+    /* Why this person cannot be removed yet, or '' if they can. Mirrors the
+       server's guards - it refuses either way, this just says so sooner. */
+    function renameTeam() {
+      QC.ask({
+        title: 'Rename the team',
+        sub: 'Shown at the top of the page and beside the code when someone joins.',
+        value: (s.team && s.team.name) || '', placeholder: 'e.g. The Badgers', ok: 'Save'
+      }).then(function (v) {
+        if (!v) return;
+        QC.net.renameTeam(v).catch(function (e) { QC.toast(e.message); });
+      });
+    }
+
+    function blockedFrom(u) {
+      var up = s.upcoming;
+      if (s.adminId === u.id) return 'Pass the quiz master role on first';
+      if (up && up.quizMasterId === u.id) return u.name + ' is writing the next quiz. Hand that over first.';
+      if (up && up.topicPickerId === u.id) return u.name + ' is picking the next topic. Hand that over first.';
+      return '';
     }
 
     function removeMember(u) {

@@ -1071,6 +1071,33 @@ async function api(req, res, path) {
     });
   }
 
+  /* Renaming a team. The quiz master owns the name; the site admin can fix
+     any of them. */
+  if (path === '/api/teams/name' && req.method === 'POST') {
+    if (!requireUser()) return;
+    const { teamId, name } = await readBody(req);
+    const target = teamId ? teamById(teamId) : team;
+    if (!target) return json(res, 400, { error: 'No such team' });
+    if (!isTeamMaster(me, target) && !isSiteAdmin(me)) {
+      return json(res, 403, { error: 'Only the quiz master can rename the team' });
+    }
+    const clean = String(name || '').trim().slice(0, MAX_NAME);
+    if (!clean) return json(res, 400, { error: 'Give the team a name' });
+    target.name = clean;
+    await persist(); broadcast(target);
+    return json(res, 200, { ok: true, name: target.name });
+  }
+
+  /* Which team does this code belong to? Answered before sign-in so somebody
+     typing a code can see whose quiz they are about to walk into. It only ever
+     tells you a name you already had the code for. */
+  if (path === '/api/team-for-code' && req.method === 'POST') {
+    const { code } = await readBody(req);
+    const quoted = String(code || '').trim();
+    const hit = quoted ? teamList().find((t) => sameCode(quoted, t.code)) : null;
+    return json(res, 200, { ok: true, name: hit ? hit.name : null });
+  }
+
   if (path === '/api/teams' && req.method === 'POST') {
     if (!requireUser()) return;
     if (!isSiteAdmin(me)) return json(res, 403, { error: 'Only the site admin can add a team' });
