@@ -280,7 +280,9 @@ About pictures and sound: you cannot make, find or attach a file - only the quiz
 
 So for "guess the animal from the sound, with pictures to choose from", each question gets a "mediaHint" of the animal's call and four "optionHints" naming a photograph of each candidate animal, while "options" holds the animal names as the labels. Say plainly in your one-sentence reply that the files are theirs to add.
 
-Match whatever tone is asked for - funny, serious, whatever. You have no way to check the web right now, so get facts as right as you can from what you already know, and if you are genuinely unsure of one, say so plainly in your one-sentence reply rather than presenting a guess as certain.`;
+Match whatever tone is asked for - funny, serious, whatever. You have no way to check the web right now, so get facts as right as you can from what you already know, and if you are genuinely unsure of one, say so plainly in your one-sentence reply rather than presenting a guess as certain.
+
+Never use an em dash (—) or an en dash (–), anywhere: not in questions, options, notes or your own replies. Where you would reach for one, use a comma, a colon, brackets, or start a new sentence. A plain hyphen in a compound word like "well-known" is fine.`;
 
 /* Shuffle each question's options and follow the right answer to its new
    place. Belt and braces on top of asking the model nicely: left alone, an LLM
@@ -306,17 +308,40 @@ function spreadAnswers(quiz) {
   return quiz;
 }
 
+/* The prompt asks the model not to use dashes; this makes sure. Asking nicely
+   is about as reliable here as it is for putting the answer somewhere other
+   than A, and unlike a stray answer position a dash ends up on the projector
+   and in the saved quiz for good. Spaced dashes become a comma, unspaced ones
+   (a range, "1914—18") a plain hyphen. */
+const noDashes = (s) => typeof s === 'string'
+  ? s.replace(/(\d)\s*[—–]\s*(?=\d)/g, '$1-')   // a range stays a range: 1914-18, 10-20
+     .replace(/\s+[—–]\s+/g, ', ')              // an aside becomes a comma
+     .replace(/\s*[—–]\s*/g, '-')               // anything else, a plain hyphen
+  : s;
+
+function stripDashes(quiz) {
+  if (!quiz) return quiz;
+  for (const q of quiz.questions || []) {
+    q.text = noDashes(q.text);
+    q.note = noDashes(q.note);
+    if (Array.isArray(q.options)) q.options = q.options.map(noDashes);
+  }
+  const tb = quiz.tieBreaker;
+  if (tb) { tb.text = noDashes(tb.text); tb.note = noDashes(tb.note); tb.unit = noDashes(tb.unit); }
+  return quiz;
+}
+
 function extractQuiz(text) {
   const m = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (!m) return { reply: text || '(no reply)', quiz: null };
+  if (!m) return { reply: noDashes(text) || '(no reply)', quiz: null };
   try {
     const parsed = JSON.parse(m[1]);
     if (parsed && Array.isArray(parsed.questions) && parsed.questions.length) {
-      const cleaned = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
-      return { reply: cleaned || 'Here you go - take a look below.', quiz: spreadAnswers(parsed) };
+      const cleaned = noDashes((text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim());
+      return { reply: cleaned || 'Here you go, take a look below.', quiz: stripDashes(spreadAnswers(parsed)) };
     }
   } catch {}
-  return { reply: text || '(no reply)', quiz: null };
+  return { reply: noDashes(text) || '(no reply)', quiz: null };
 }
 
 async function askAssistant(history, topic) {
