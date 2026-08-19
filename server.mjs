@@ -632,7 +632,10 @@ function deriveRoles(team, rows) {
     };
   }
   const last = eligible[eligible.length - 1];
-  const second = eligible.length > 1 ? eligible[eligible.length - 2] : eligible[0];
+  /* Whoever won never gets a job. With only two playing, "second from last" is
+     the winner, so the wooden spoon took the quiz and handed the topic to the
+     person who had just beaten them. Below three, one person takes both. */
+  const second = eligible.length > 2 ? eligible[eligible.length - 2] : last;
   const qCount = liveQuestionCount(team, team.live);
   return {
     quizMasterId: last.userId,

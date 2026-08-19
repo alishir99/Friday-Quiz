@@ -790,3 +790,39 @@ test('the topic picker can be removed too, and the job moves', async () => {
   assert.equal(res.status, 200, 'no longer refused');
   assert.notEqual((await stateAs('aliB')).upcoming.topicPickerId, picker, 'handed on');
 });
+
+/* With only two playing, "second from last" is whoever won - so the wooden
+   spoon used to take the quiz and hand the topic to the person who had just
+   beaten them. The winner never gets a job. */
+test('the winner is never handed next week', async () => {
+  const state = await stateAs('ali');
+
+  /* Ali runs it, so does not rank. Bea and Newcomer play - both members, since
+     a guest would be filtered out of the rota and leave only one candidate. */
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Pair',
+      questions: [{ id: 'q1', text: '?', options: ['a', 'b'], correct: 0 }],
+      tieBreaker: { text: 'n?', unit: '', answer: 1 } } }
+  });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });
+
+  await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });     // right
+  await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'newbie' });  // wrong
+  for (let i = 0; i < 6; i++) await call('/api/live/advance', { method: 'POST', as: 'ali' });
+
+  const before = await stateAs('ali');
+  const ranked = before.live.ranking.filter((r) => {
+    const u = before.users.find((x) => x.id === r.userId);
+    return u && !u.guest && u.active !== false;      // only the rota-eligible
+  });
+  assert.equal(ranked.length, 2, 'exactly two eligible players ranked');
+  const winner = ranked[0].userId;
+
+  await call('/api/live/finish', { method: 'POST', as: 'ali' });
+  const after = await stateAs('ali');
+  assert.notEqual(after.upcoming.topicPickerId, winner, 'the winner does not pick the topic');
+  assert.notEqual(after.upcoming.quizMasterId, winner, 'nor write the quiz');
+});
