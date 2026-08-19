@@ -54,6 +54,7 @@
   Net.teams = function () { return Net.call('api/teams'); };
   Net.addTeam = function (name, code) { return Net.call('api/teams', 'POST', { name: name, code: code }); };
   Net.renameTeam = function (name, teamId) { return Net.call('api/teams/name', 'POST', { name: name, teamId: teamId }); };
+  Net.removeTeam = function (teamId) { return Net.call('api/teams/remove', 'POST', { teamId: teamId }); };
   // Signed out: turns a code into the team's name, so you can see where you are going.
   Net.teamForCode = function (code) { return Net.call('api/team-for-code', 'POST', { code: code }); };
   // Pass a code to choose one, or nothing at all to have one generated.

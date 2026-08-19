@@ -522,31 +522,46 @@ test('the admin can remove someone, and put them back', async () => {
   assert.equal((await signIn('Spare', 'secret1', undefined)).status, 200, 'and they are back');
 });
 
-test('removing cannot leave a job with nobody holding it', async () => {
+test('only yourself and the quiz master are un-removable', async () => {
   const state = await stateAs('ali');
-  const meId = state.me;
-  const master = state.upcoming.quizMasterId;
-  const picker = state.upcoming.topicPickerId;
 
   const self = await call('/api/admin/set-active', {
-    method: 'POST', body: { userId: meId, active: false }, as: 'ali'
+    method: 'POST', body: { userId: state.me, active: false }, as: 'ali'
   });
-  assert.equal(self.status, 400, 'not yourself');
+  assert.equal(self.status, 400, 'not yourself - you would lock yourself out');
 
-  const theMaster = await call('/api/admin/set-active', {
-    method: 'POST', body: { userId: master, active: false }, as: 'ali'
+  // Ali runs this team, so nobody can take Ali off it either.
+  const theBoss = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: state.adminId, active: false }, as: 'ali'
   });
-  assert.ok(theMaster.status >= 400, 'not whoever is writing the next quiz');
-
-  const thePicker = await call('/api/admin/set-active', {
-    method: 'POST', body: { userId: picker, active: false }, as: 'ali'
-  });
-  assert.ok(thePicker.status >= 400, 'nor whoever is picking the topic');
+  assert.equal(theBoss.status, 400, 'nor whoever runs the team');
 
   const notAdmin = await call('/api/admin/set-active', {
-    method: 'POST', body: { userId: master, active: false }, as: 'bea'
+    method: 'POST', body: { userId: state.me, active: false }, as: 'bea'
   });
-  assert.equal(notAdmin.status, 403, 'and only the admin may do any of it');
+  assert.equal(notAdmin.status, 403, 'and only the quiz master may do any of it');
+});
+
+/* Holding next week's duty used to block removal outright, which read as a
+   broken button. The job is handed on instead. */
+test('removing whoever holds next week hands the job on', async () => {
+  await signIn('Temp', 'secret1', INVITE, 'temp');
+  let state = await stateAs('ali');
+  const temp = state.users.find((u) => u.name === 'Temp');
+
+  // Put Temp down to write next week, then remove them.
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: temp.id }, as: 'ali' });
+  assert.equal((await stateAs('ali')).upcoming.quizMasterId, temp.id);
+
+  const gone = await call('/api/admin/set-active', {
+    method: 'POST', body: { userId: temp.id, active: false }, as: 'ali'
+  });
+  assert.equal(gone.status, 200, 'removal is allowed');
+
+  state = await stateAs('ali');
+  assert.notEqual(state.upcoming.quizMasterId, temp.id, 'the duty moved');
+  const now = state.users.find((u) => u.id === state.upcoming.quizMasterId);
+  assert.ok(now && now.active !== false, 'and landed on somebody still here');
 });
 
 /* The code moved out of the environment and into the database so the admin can
@@ -763,14 +778,15 @@ test('a team can be renamed, and a code says whose team it is', async () => {
   assert.equal(unknown.body.name, null, 'and gives nothing away for a wrong code');
 });
 
-test('removing is refused for whoever holds a job, with a reason', async () => {
+test('the topic picker can be removed too, and the job moves', async () => {
   const b = await stateAs('aliB');
   const picker = b.upcoming && b.upcoming.topicPickerId;
   assert.ok(picker, 'team two has a rota');
+  assert.notEqual(picker, b.adminId, 'and the picker is not the one running it');
 
   const res = await call('/api/admin/set-active', {
     method: 'POST', body: { userId: picker, active: false }, as: 'aliB'
   });
-  assert.equal(res.status, 409);
-  assert.match(res.body.error, /picking the next topic/, 'and says why, by name');
+  assert.equal(res.status, 200, 'no longer refused');
+  assert.notEqual((await stateAs('aliB')).upcoming.topicPickerId, picker, 'handed on');
 });

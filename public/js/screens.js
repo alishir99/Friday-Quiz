@@ -203,7 +203,7 @@
           action,
           (status === 'ready' && master) ? revealSwitch() : null,
           el('div.spacer'),
-          QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button',
+          QC.isAdmin() ? el('button.btn.chip', { type: 'button',
             text: 'Change who does what', onclick: overrideRoles }) : null
         ]) : null,
         note ? el('p.muted', { style: { marginTop: action ? '14px' : '28px', fontSize: '16px' }, text: note }) : null
@@ -211,7 +211,14 @@
 
       el('div.grid-2', [
         el('div.card', [
-          el('div.kicker', { text: 'Where we are' }),
+          el('div.row', [
+            el('div.kicker', { text: 'Where we are' }),
+            el('div.spacer'),
+            hasTopic ? el('button.btn.chip', { type: 'button', text: 'Change topic',
+              onclick: chooseTopic, hidden: !(master || picker) }) : null,
+            (master && hasTopic) ? el('button.btn.chip', { type: 'button', text: 'Edit questions',
+              onclick: function () { location.hash = '#/build'; } }) : null
+          ]),
           el('div.steps', { style: { marginTop: '8px' } }, [
             phase(hasTopic, status === 'topic', 'Topic chosen',
               !hasTopic ? QC.name(u.topicPickerId) + ' picks it'
@@ -222,11 +229,6 @@
               ready ? 'All 11 ready' : QC.name(u.quizMasterId) + ' is on it'),
             phase(false, status === 'ready', 'Play on Friday', 'Everyone answers on their own screen')
           ]),
-          (master || picker) ? el('div.row', { style: { marginTop: '18px' } }, [
-            hasTopic ? el('button.btn.quiet.sm', { type: 'button', text: 'Change topic', onclick: chooseTopic }) : null,
-            master && hasTopic ? el('button.btn.quiet.sm', { type: 'button', text: 'Edit questions',
-              onclick: function () { location.hash = '#/build'; } }) : null
-          ]) : null
         ]),
         el('div.card', [
           el('div.row', [
@@ -344,53 +346,76 @@
     var onlineCount = members.filter(function (u) { return u.online; }).length;
 
     return el('div.stack', [
-      el('div.page-head', [
-        el('div.row', { style: { alignItems: 'baseline', gap: '12px' } }, [
-          el('h1', { text: (s.team && s.team.name) || 'The team' }),
-          QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button', text: 'Rename',
-            onclick: renameTeam }) : null
-        ]),
-        el('p.sub', { text: members.length + ' account' + (members.length === 1 ? '' : 's')
-          + (onlineCount ? ' · ' + onlineCount + ' online now' : '') })
-      ]),
-      el('div.list', members.map(function (u) {
-        var st = statsFor(u.id);
-        return el('div.list-row', [
-          el('span.av-wrap', [av(u.name), el('span.presence' + (u.online ? '.on' : ''),
-            { title: u.online ? 'Online now' : 'Offline' })]),
-          el('div', [
-            el('div.person', [el('span.nm', { text: u.name + (u.id === s.me ? '  ·  you' : '') })]),
-            el('div.rl', { text: st && st.played
-              ? st.played + ' played · ' + st.avg.toFixed(1) + ' avg · ' + st.hosted + ' hosted'
-              : 'Not played yet' })
-          ]),
+      /* Who runs this place comes first - it is the thing you check, and the
+         thing you hand over. */
+      adminCard(),
+
+      /* One block per team, folded shut. Everything a team has - its people,
+         its code, the QR to join it - lives inside its own fold rather than
+         spread down the page, so two teams can never be read as one.
+         <details> because the browser already does this properly: keyboard,
+         screen readers and all. */
+      yourTeamBlock(),
+      s.siteAdmin ? otherTeams() : null
+    ]);
+
+    /* Your own team, open by default: it is the one you actually run. */
+    function yourTeamBlock() {
+      return el('details.team-fold', { open: true }, [
+        el('summary.team-sum', [
+          el('span.team-nm', { text: (s.team && s.team.name) || 'The team' }),
+          el('span.pill.done', { text: 'Yours' }),
           el('div.spacer'),
-          s.adminId === u.id ? el('span.pill', { text: 'Admin / Quiz master' }) : null,
-          s.upcoming && s.upcoming.quizMasterId === u.id ? el('span.pill', { text: 'Quiz maker' }) : null,
-          s.upcoming && s.upcoming.topicPickerId === u.id ? el('span.pill', { text: 'Topic picker' }) : null,
-          QC.isAdmin() && u.id !== s.me ? el('button.btn.quiet.sm', { type: 'button', text: 'Reset password',
-            onclick: function () { resetPassword(u); } }) : null,
-          QC.isAdmin() && u.id !== s.me ? (function () {
-            /* Removing whoever is down to write or pick next week would leave
-               that job with nobody holding it. Saying so on the button beats
-               letting them click and reading it in a toast. */
-            var why = blockedFrom(u);
-            return el('button.btn.quiet.sm' + (why ? '.is-off' : ''), {
-              type: 'button', text: 'Remove', disabled: !!why,
-              title: why || ('Remove ' + u.name + ' from the team'),
-              onclick: function () { removeMember(u); }
-            });
-          })() : null
-        ]);
-      })),
+          el('span.dim.small', { text: members.length + ' member' + (members.length === 1 ? '' : 's')
+            + (onlineCount ? ' · ' + onlineCount + ' online' : '') })
+        ]),
+        el('div.team-body', [
+          QC.isAdmin() ? el('div.row', { style: { marginBottom: '14px' } }, [
+            el('button.btn.quiet.sm', { type: 'button', text: 'Rename team', onclick: renameTeam })
+          ]) : null,
+          el('div.list', members.map(memberRow)),
+          removedBlock(),
+          joinBlock()
+        ])
+      ]);
+    }
 
-      /* The whole install, for whoever owns it. A quiz master runs one team
-         and never sees this. */
-      s.siteAdmin ? teamsCard() : null,
+    function memberRow(u) {
+      var st = statsFor(u.id);
+      return el('div.list-row', [
+        el('span.av-wrap', [av(u.name), el('span.presence' + (u.online ? '.on' : ''),
+          { title: u.online ? 'Online now' : 'Offline' })]),
+        el('div', [
+          el('div.person', [el('span.nm', { text: u.name + (u.id === s.me ? '  ·  you' : '') })]),
+          el('div.rl', { text: st && st.played
+            ? st.played + ' played · ' + st.avg.toFixed(1) + ' avg · ' + st.hosted + ' hosted'
+            : 'Not played yet' })
+        ]),
+        el('div.spacer'),
+        s.adminId === u.id ? el('span.pill', { text: 'Quiz master' }) : null,
+        s.upcoming && s.upcoming.quizMasterId === u.id ? el('span.pill', { text: 'Quiz maker' }) : null,
+        s.upcoming && s.upcoming.topicPickerId === u.id ? el('span.pill', { text: 'Topic picker' }) : null,
+        QC.isAdmin() && u.id !== s.me ? el('button.btn.quiet.sm', { type: 'button', text: 'Reset password',
+          onclick: function () { resetPassword(u); } }) : null,
+        QC.isAdmin() && u.id !== s.me ? (function () {
+          /* Removing whoever is down to write or pick next week would leave
+             that job with nobody holding it. Saying so on the button beats
+             letting them click and reading it in a toast. */
+          var why = blockedFrom(u);
+          return el('button.btn.quiet.sm' + (why ? '.is-off' : ''), {
+            type: 'button', text: 'Remove', disabled: !!why,
+            title: why || ('Remove ' + u.name + ' from the team'),
+            onclick: function () { removeMember(u); }
+          });
+        })() : null
+      ]);
+    }
 
-      /* Removed people are kept, not deleted, so every quiz they played still
-         reads properly. Only the admin needs to see the list. */
-      (QC.isAdmin() && removed.length) ? el('div.card.flat', { style: { marginTop: '10px' } }, [
+    /* Removed people are kept, not deleted, so every quiz they played still
+       reads properly. Only the quiz master needs to see the list. */
+    function removedBlock() {
+      if (!QC.isAdmin() || !removed.length) return null;
+      return el('div.card.flat', { style: { marginTop: '14px' } }, [
         el('div.kicker', { text: 'Removed  ·  ' + removed.length }),
         el('p.muted', { style: { marginTop: '8px', marginBottom: '14px' } },
           'They cannot sign in and are out of the rota. Past quizzes still show their name.'),
@@ -411,129 +436,35 @@
               } })
           ]);
         }))
-      ]) : null,
+      ]);
+    }
 
-      adminCard(),
-
-      el('div.card.flat', { style: { marginTop: '10px' } }, [
+    /* The link, the code and the QR - everything someone needs to get in. */
+    function joinBlock() {
+      return el('div.card.flat', { style: { marginTop: '14px' } }, [
         el('div.kicker', { text: 'Adding someone' }),
         el('p.muted', { style: { marginTop: '8px' } }, s.inviteCode
-          ? 'Send them this link, or have them scan the code. They will need the invite code the first time.'
+          ? 'Send them this link, or have them scan the code. They will need the code the first time.'
           : 'Send them this link, or have them scan the code, and they make their own account.'),
         el('p', { style: { marginTop: '10px', fontFamily: 'monospace', fontSize: '15px' }, text: location.origin }),
         inviteBlock(),
         el('div', { style: { marginTop: '14px' } }, [QC.qrSvg(location.origin, 4)])
-      ])
-    ]);
-
-    /* The invite code, readable by any member so anyone can invite someone,
-       changeable by the admin without going anywhere near the server. */
-    function inviteBlock() {
-      if (s.inviteCode === null || s.inviteCode === undefined) return null;   // a guest
-      var admin = QC.isAdmin();
-      if (!s.inviteCode) {
-        return el('div', { style: { marginTop: '14px' } }, [
-          el('p.muted', { text: 'Anyone with the link can sign up - no code is set.' }),
-          admin ? el('button.btn.quiet.sm', { type: 'button', text: 'Set an invite code',
-            style: { marginTop: '8px' }, onclick: newCode }) : null
-        ]);
-      }
-      return el('div.invite-box', { style: { marginTop: '14px' } }, [
-        el('div.kicker', { text: 'Invite code' }),
-        el('div.invite-code', { text: s.inviteCode, title: 'Tap to copy',
-          onclick: function () { copy(s.inviteCode); } }),
-        admin ? el('div.row', { style: { marginTop: '10px' } }, [
-          el('button.btn.quiet.sm', { type: 'button', text: 'New code', onclick: newCode }),
-          el('button.btn.quiet.sm', { type: 'button', text: 'Type my own', onclick: pickCode })
-        ]) : null
       ]);
     }
 
-    function copy(text) {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(text)
-          .then(function () { QC.toast('Copied'); })
-          .catch(function () { /* a tap that does nothing is better than a scary error */ });
-      }
-    }
-
-    function newCode() {
-      QC.confirm({
-        title: 'Make a new invite code?',
-        sub: 'The old one stops working straight away. Anyone who already has an account is unaffected.',
-        ok: 'New code'
-      }).then(function (yes) {
-        if (!yes) return;
-        QC.net.setInvite().then(function (r) { QC.toast('New code: ' + r.inviteCode); })
-          .catch(function (e) { QC.toast(e.message); });
-      });
-    }
-
-    function pickCode() {
-      QC.ask({
-        title: 'Invite code',
-        sub: 'Anything your team will remember. Capitals do not matter.',
-        value: s.inviteCode || '', placeholder: 'e.g. pickled-onion', ok: 'Save'
-      }).then(function (v) {
-        if (!v) return;                      // cancelled; it never returns empty
-        QC.net.setInvite(v).catch(function (e) { QC.toast(e.message); });
-      });
-    }
-
-    function adminCard() {
-      if (s.adminId) {
-        return el('div.card.flat', { style: { marginTop: '10px' } }, [
-          el('div.kicker', { text: 'Admin / Quiz master' }),
-          el('div.row', { style: { marginTop: '10px', alignItems: 'center' } }, [
-            av(QC.name(s.adminId)),
-            el('div', { style: { marginLeft: '12px' } },
-              [QC.name(s.adminId) + (s.adminId === s.me ? '  ·  you' : '')]),
-            el('div.spacer'),
-            QC.isAdmin() ? el('button.btn.quiet.sm', { type: 'button', text: 'Pass to someone else',
-              onclick: passAdmin }) : null
-          ])
-        ]);
-      }
-      return el('div.card.flat', { style: { marginTop: '10px' } }, [
-        el('div.kicker', { text: 'Admin / Quiz master' }),
-        el('p.muted', { style: { marginTop: '8px' } },
-          'Nobody is admin yet. The admin resets forgotten passwords and edits the Rules page.'),
-        el('button.btn.sm', { type: 'button', text: 'Become admin', style: { marginTop: '10px' },
-          onclick: function () { QC.net.claimAdmin().catch(function (e) { QC.toast(e.message); }); } })
-      ]);
-    }
-
-    function passAdmin() {
-      QC.pickPerson({
-        title: 'Pass admin to who?',
-        people: s.users.filter(function (u) { return u.id !== s.me && !u.guest && u.active !== false; }),
-        onPick: function (id) { QC.net.transferAdmin(id).catch(function (e) { QC.toast(e.message); }); }
-      });
-    }
-
-    /* Forgot-password recovery: the admin resets it and relays the
-       temporary one directly. */
-    /* Every team on the install, with its code, and a way to add one. Sits on
-       the Team page rather than a screen of its own: it is rare, and it belongs
-       next to the other settings. Loaded on demand - most people never see it. */
-    function teamsCard() {
+    /* The other teams on this install, one fold each, for whoever owns the
+       place. Loaded on demand - most people never open this page as site
+       admin, and it is a second request. */
+    function otherTeams() {
       var body = el('div', { style: { marginTop: '10px' } }, [el('p.muted', { text: 'Loading…' })]);
+
       QC.net.teams().then(function (r) {
+        var others = r.teams.filter(function (t) { return !t.mine; });
         QC.clear(body);
         QC.append(body, [
-          el('div.list', r.teams.map(function (t) {
-            return el('div.list-row' + (s.team && t.id === s.team.id ? '.is-mine' : ''), [
-              el('div', [
-                el('div.person', [el('span.nm', { text: t.name
-                  + (s.team && t.id === s.team.id ? '  ·  yours' : '') })]),
-                el('div.rl', { text: t.members + ' member' + (t.members === 1 ? '' : 's')
-                  + ' · ' + t.played + ' played'
-                  + (t.masterName ? ' · run by ' + t.masterName : ' · nobody in charge yet') })
-              ]),
-              el('div.spacer'),
-              el('code.team-code', { text: t.code || 'open', title: 'Their code' })
-            ]);
-          })),
+          others.length
+            ? el('div.stack', { style: { gap: '10px' } }, others.map(teamFold))
+            : el('p.muted', { text: 'No other teams yet.' }),
           el('button.btn.quiet.sm', { type: 'button', text: '+  New team',
             style: { marginTop: '12px' }, onclick: addTeam })
         ]);
@@ -542,10 +473,76 @@
         QC.append(body, [el('p.auth-err', { text: e.message })]);
       });
 
-      return el('div.card.flat', { style: { marginTop: '10px' } }, [
-        el('div.kicker', { text: 'Teams on this server' }),
+      return el('div', { style: { marginTop: '20px' } }, [
+        el('div.kicker', { text: 'Other teams on this server' }),
         body
       ]);
+    }
+
+    /* One other team, shut. Everything it has is inside: who is on it, its
+       code, and the QR to join it. Nothing here acts on your own team. */
+    function teamFold(t) {
+      var live = t.users.filter(function (u) { return !u.guest && u.active; });
+      return el('details.team-fold', [
+        el('summary.team-sum', [
+          el('span.team-nm', { text: t.name }),
+          el('div.spacer'),
+          el('span.dim.small', { text: live.length + ' member' + (live.length === 1 ? '' : 's')
+            + ' · ' + t.played + ' played' })
+        ]),
+        el('div.team-body', [
+          el('div.row', { style: { marginBottom: '14px' } }, [
+            el('button.btn.quiet.sm', { type: 'button', text: 'Rename',
+              onclick: function () { renameOther(t); } }),
+            el('button.btn.quiet.sm.danger', { type: 'button', text: 'Remove team',
+              onclick: function () { removeTeam(t); } })
+          ]),
+          el('div.list', live.length ? live.map(function (u) {
+            return el('div.list-row', [
+              av(u.name),
+              el('div', [
+                el('div.person', [el('span.nm', { text: u.name })]),
+                el('div.rl', { text: t.masterId === u.id ? 'Quiz master' : 'Member' })
+              ])
+            ]);
+          }) : [el('p.muted', { style: { padding: '10px 2px' }, text: 'Nobody has joined yet.' })]),
+
+          el('div.card.flat', { style: { marginTop: '14px' } }, [
+            el('div.kicker', { text: 'How they join' }),
+            el('p', { style: { marginTop: '10px', fontFamily: 'monospace', fontSize: '15px' }, text: location.origin }),
+            el('div.invite-box', { style: { marginTop: '12px' } }, [
+              el('div.kicker', { text: 'Their code' }),
+              el('div.invite-code', { text: t.code || 'open', title: 'Tap to copy',
+                onclick: function () { copy(t.code); } })
+            ]),
+            el('div', { style: { marginTop: '14px' } }, [QC.qrSvg(location.origin, 4)])
+          ])
+        ])
+      ]);
+    }
+
+    function renameOther(t) {
+      QC.ask({
+        title: 'Rename ' + t.name, value: t.name, placeholder: 'Team name', ok: 'Save'
+      }).then(function (v) {
+        if (!v) return;
+        QC.net.renameTeam(v, t.id).then(function () { QC.render(); })
+          .catch(function (e) { QC.toast(e.message); });
+      });
+    }
+
+    function removeTeam(t) {
+      QC.confirm({
+        title: 'Remove ' + t.name + '?',
+        sub: 'Their members, history and rota go with it, and everyone on it is signed out. '
+           + 'A copy of the whole team is written to the server first, so it is recoverable by hand.',
+        ok: 'Remove team', danger: true
+      }).then(function (yes) {
+        if (!yes) return;
+        QC.net.removeTeam(t.id)
+          .then(function (r) { QC.toast(r.name + ' removed'); QC.render(); })
+          .catch(function (e) { QC.toast(e.message); });
+      });
     }
 
     function addTeam() {
@@ -576,18 +573,18 @@
     }
 
     function blockedFrom(u) {
-      var up = s.upcoming;
+      // Only the person running the team is off limits. Anyone else can go,
+      // and next week's duty is handed on for them.
       if (s.adminId === u.id) return 'Pass the quiz master role on first';
-      if (up && up.quizMasterId === u.id) return u.name + ' is writing the next quiz. Hand that over first.';
-      if (up && up.topicPickerId === u.id) return u.name + ' is picking the next topic. Hand that over first.';
       return '';
     }
 
     function removeMember(u) {
       QC.confirm({
         title: 'Remove ' + u.name + '?',
-        sub: 'They will be signed out and cannot sign back in, and they drop out of the rota. '
-           + 'Nothing is deleted - every quiz they played still shows their name, and you can put them back.',
+        sub: 'They will be signed out and cannot sign back in. If they were down to write or '
+           + 'pick next week, that gets handed on. Nothing is deleted - every quiz they played '
+           + 'still shows their name, and you can put them back.',
         ok: 'Remove', danger: true
       }).then(function (yes) {
         if (!yes) return;

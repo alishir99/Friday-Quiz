@@ -1063,10 +1063,14 @@ async function api(req, res, path) {
       ok: true,
       teams: teamList().map((t) => ({
         id: t.id, name: t.name, code: t.code,
-        members: t.users.filter((u) => !u.guest && u.active !== false).length,
         played: t.history.length,
         masterId: t.masterId,
-        masterName: (userById(t, t.masterId) || {}).name || null
+        masterName: (userById(t, t.masterId) || {}).name || null,
+        mine: !!team && t.id === team.id,
+        // Enough to draw each team's own roster without a second round trip.
+        users: t.users.map((u) => ({
+          id: u.id, name: u.name, guest: !!u.guest, active: u.active !== false
+        }))
       }))
     });
   }
@@ -1117,6 +1121,34 @@ async function api(req, res, path) {
     return json(res, 200, { ok: true, team: { id, name: made.name, code: made.code } });
   }
 
+  /* Removing a team takes its members, history and rota with it. The whole
+     record is written out beside the database first: this is the one action
+     here with nothing else to undo it. */
+  if (path === '/api/teams/remove' && req.method === 'POST') {
+    if (!requireUser()) return;
+    if (!isSiteAdmin(me)) return json(res, 403, { error: 'Only the site admin can remove a team' });
+    const { teamId } = await readBody(req);
+    const doomed = teamById(teamId);
+    if (!doomed) return json(res, 400, { error: 'No such team' });
+    if (team && doomed.id === team.id) {
+      return json(res, 400, { error: 'That is the team you are signed in to' });
+    }
+    if (teamList().length < 2) return json(res, 400, { error: 'That is the only team' });
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    try {
+      await writeFile(join(DATA_DIR, `removed-team-${doomed.name.replace(/[^a-z0-9]+/gi, '-')}-${stamp}.json`),
+        JSON.stringify(doomed, null, 2), 'utf8');
+    } catch (e) {
+      return json(res, 500, { error: 'Could not write the backup, so nothing was removed' });
+    }
+    // Sign its people out; their accounts are gone with the team.
+    for (const [token, sess] of tokens) if (sess.teamId === doomed.id) tokens.delete(token);
+    delete db.teams[doomed.id];
+    await persist();
+    return json(res, 200, { ok: true, name: doomed.name });
+  }
+
   /* The invite code, changeable without a trip to the server. Send a code to
      set your own, or nothing to have one made up. */
   if (path === '/api/invite' && req.method === 'POST') {
@@ -1147,16 +1179,31 @@ async function api(req, res, path) {
     if (!target) return json(res, 400, { error: 'No such person' });
 
     if (active === false) {
-      // Each of these would leave a job with nobody holding it.
+      /* Only two people cannot be removed: you, and whoever runs the team -
+         both would lock somebody out of their own controls. Holding next
+         week's duty is not a reason to refuse; it just gets handed on. */
       if (userId === me) return json(res, 400, { error: 'You cannot remove yourself' });
-      if (isTeamMaster(userId, team)) return json(res, 400, { error: 'Pass admin on first' });
-      if (team.upcoming && team.upcoming.quizMasterId === userId) {
-        return json(res, 409, { error: target.name + ' is writing the next quiz. Hand that over first.' });
-      }
-      if (team.upcoming && team.upcoming.topicPickerId === userId) {
-        return json(res, 409, { error: target.name + ' is picking the next topic. Hand that over first.' });
+      if (isTeamMaster(userId, team)) {
+        return json(res, 400, { error: 'Pass the quiz master role on first' });
       }
       target.active = false;
+
+      /* If they were down to write or pick next week, give the job to someone
+         still here rather than leaving it pointing at a removed account. */
+      const up = team.upcoming;
+      if (up) {
+        const free = team.users.filter((u) =>
+          !u.guest && u.active !== false && u.id !== up.quizMasterId && u.id !== up.topicPickerId);
+        const spare = () => { const u = free.shift(); return u ? u.id : null; };
+        if (up.quizMasterId === userId) {
+          up.quizMasterId = spare() || team.masterId || null;
+          up.reason = { ...(up.reason || {}), master: 'Handed on when ' + target.name + ' was removed' };
+        }
+        if (up.topicPickerId === userId) {
+          up.topicPickerId = spare() || team.masterId || null;
+          up.reason = { ...(up.reason || {}), picker: 'Handed on when ' + target.name + ' was removed' };
+        }
+      }
       // Out of the room, and out of any game already running.
       for (const [token, uid_] of tokens) if (uid_ === userId) tokens.delete(token);
       if (team.live) team.live.players = team.live.players.filter((p) => p !== userId);
