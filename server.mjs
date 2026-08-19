@@ -38,6 +38,11 @@ const QUESTION_COUNT = 10;     // how many a fresh quiz starts with
 const MAX_QUESTIONS = 20;      // how many the quiz master can grow it to
 const DEFAULT_OPTIONS = 3;
 const MIN_OPTIONS = 2;
+/* Overrides for when the automatic layout reads badly. Deliberately a short
+   list of shapes rather than free placement: whatever is chosen still has to
+   work on a projector and on somebody's phone. */
+const MEDIA_SIZES = ['fit', 'large', 'fill'];
+const OPTION_LAYOUTS = ['auto', 'row', 'stacked'];
 const MAX_OPTIONS = 6;
 
 /* What a question may carry. The server picks the file extension from this
@@ -368,6 +373,7 @@ function blankQuiz(authorId, topic) {
          quiz already in the history keeps working untouched - they simply
          have no optionMedia and nothing tries to draw one. */
       optionMedia: Array.from({ length: DEFAULT_OPTIONS }, () => null),
+      mediaSize: 'fit', optionLayout: 'auto',
       correct: null, note: '', media: null
     })),
     tieBreaker: { text: '', answer: null, unit: '', note: '', media: null }
@@ -681,7 +687,9 @@ function visibleQuiz(quiz, canSeeAnswers, canSeeTopic, revealed, tieRevealed) {
     // Answered questions carry their answer; the rest are stripped of it.
     questions: quiz.questions.map((q, i) => (i < upTo ? { ...q } : {
       id: q.id, text: q.text, options: q.options,
-      optionMedia: q.optionMedia || null, media: q.media || null
+      optionMedia: q.optionMedia || null, media: q.media || null,
+      // How it should be laid out is not a secret, and the slide needs it.
+      mediaSize: q.mediaSize || 'fit', optionLayout: q.optionLayout || 'auto'
     })),
     tieBreaker: tieRevealed ? { ...quiz.tieBreaker } : {
       text: quiz.tieBreaker.text,
@@ -1364,7 +1372,10 @@ async function api(req, res, path) {
       // One media slot per option, however mangled the array arrived.
       const src = Array.isArray(q.optionMedia) ? q.optionMedia : [];
       const optionMedia = options.map((_, i) => cleanMedia(team, src[i]));
-      return { ...q, options, optionMedia, correct, media: cleanMedia(team, q.media) };
+      const mediaSize = MEDIA_SIZES.includes(q.mediaSize) ? q.mediaSize : 'fit';
+      const optionLayout = OPTION_LAYOUTS.includes(q.optionLayout) ? q.optionLayout : 'auto';
+      return { ...q, options, optionMedia, correct, mediaSize, optionLayout,
+               media: cleanMedia(team, q.media) };
     });
     if (quiz.tieBreaker) quiz.tieBreaker.media = cleanMedia(team, quiz.tieBreaker.media);
     team.upcoming.quiz = { ...quiz, authorId: me, topic: team.upcoming.topic };

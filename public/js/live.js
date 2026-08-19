@@ -40,19 +40,21 @@
   /* Media on the big screen. Sound and video wait for the quiz master to press
      play: a clip that starts on its own talks over whoever is still reading the
      question out, and there is no way to un-hear the answer. */
-  function stageMedia(m) {
+  function stageMedia(m, size) {
     if (!m) return null;
     var url = QC.mediaUrl(m);
     if (!url) return null;
+    // 'fit' shares the leftover room, 'large' takes more, 'fill' takes it all.
+    var cls = '.s-media.size-' + (size || 'fit');
 
     if (m.kind === 'image') {
-      return el('div.s-media', [el('img', { src: url, alt: m.name || '' })]);
+      return el('div' + cls, [el('img', { src: url, alt: m.name || '' })]);
     }
 
     var node = el(m.kind === 'audio' ? 'audio' : 'video', {
       src: url, controls: true, preload: 'auto', playsinline: true
     });
-    return el('div.s-media.' + m.kind, [node]);
+    return el('div' + cls + '.' + m.kind, [node]);
   }
 
   /* On a player's own device. Pictures are needed to answer, but a roomful of
@@ -279,7 +281,10 @@
      than as four full-width bars with an ocean of space in each; a sentence
      needs the whole width. Measured from the longest one, since they have to
      share a layout. */
-  function optionShape(opts) {
+  function optionShape(opts, override) {
+    // The quiz master gets the last word when the guess reads badly.
+    if (override === 'row') return 'tight';
+    if (override === 'stacked') return 'wide';
     var longest = 0, pics = false;
     opts.forEach(function (o) {
       longest = Math.max(longest, String(o.text || '').trim().length);
@@ -302,13 +307,13 @@
   function pQuestion(reveal) {
     var L = live(), q = currentQ();
     var opts = filledOptions(q);
-    var shape = optionShape(opts);
+    var shape = optionShape(opts, q.optionLayout);
     var qShape = questionShape(q.text);
 
     return el('div.slide' + (q.media ? '.has-media' : ''), [
       el('div.s-kicker', { text: 'Question ' + (L.index + 1) + ' of ' + L.questionCount }),
       el('h2.s-q' + (qShape ? '.' + qShape : ''), { text: q.text }),
-      stageMedia(q.media),
+      stageMedia(q.media, q.mediaSize),
       el('div.s-opts.opts-' + shape
          + (shape === 'pics' ? '.with-media' : ''), opts.map(function (o) {
         var cls = reveal ? (o.i === q.correct ? '.right' : '.wrong') : '';
@@ -563,7 +568,7 @@
     var L = live(), q = quiz().questions[L.index];
     var mine = L.myAnswers[L.index];
     var opts = filledOptions(q);
-    var shape = optionShape(opts);
+    var shape = optionShape(opts, q.optionLayout);
 
     return el('div.play', [
       el('div.play-head', [

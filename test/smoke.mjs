@@ -939,3 +939,36 @@ test('the server itself can be handed on, by its owner only', async () => {
   await call('/api/site-admin/transfer', { method: 'POST', body: { userId: start.me }, as: 'bea' });
   assert.equal((await stateAs('ali')).siteAdmin, true);
 });
+
+/* The two layout overrides. They reach players as well as the big screen, since
+   the phone lays the answers out too - and a bad value must not get through. */
+test('picture size and answer layout are saved and sent on', async () => {
+  // Earlier games moved the duty on, so take it back before writing a quiz.
+  const me = (await stateAs('ali')).me;
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: me }, as: 'ali' });
+
+  const saved = await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Layout',
+      questions: [
+        { id: 'q1', text: 'A?', options: ['a', 'b'], correct: 0,
+          mediaSize: 'fill', optionLayout: 'row' },
+        { id: 'q2', text: 'B?', options: ['a', 'b'], correct: 0,
+          mediaSize: 'enormous', optionLayout: 'diagonal' }   // nonsense
+      ],
+      tieBreaker: { text: 'n?', unit: '', answer: 1 } } }
+  });
+  assert.equal(saved.status, 200);
+
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+  const seen = await stateAs('cal');
+  const qs = seen.upcoming.quiz.questions;
+
+  assert.equal(qs[0].mediaSize, 'fill', 'a real choice survives');
+  assert.equal(qs[0].optionLayout, 'row');
+  assert.equal(qs[1].mediaSize, 'fit', 'nonsense falls back to the default');
+  assert.equal(qs[1].optionLayout, 'auto');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});

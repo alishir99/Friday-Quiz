@@ -1500,3 +1500,12 @@ audio.media-player { height: 44px; }
 }
 .play-q.q-long  { font-size: clamp(20px, 4.8vw, 27px); }
 .play-q.q-xlong { font-size: clamp(18px, 4.2vw, 23px); line-height: 1.25; }
+
+/* How much of the slide a picture takes, when the automatic share is not what
+   the quiz master wanted. Still proportions rather than positions, so the slide
+   keeps working on a projector and on a phone. */
+.s-media.size-large { flex: 2 1 auto; }
+.s-media.size-fill  { flex: 4 1 auto; }
+.slide.has-media .s-media.size-fill ~ .s-opts { margin-top: clamp(10px, 1.4vh, 18px); }
+/* Filling the slide means the question gets out of the way too. */
+.slide.has-media .s-media.size-fill { margin-top: clamp(10px, 1.4vh, 18px); }

@@ -1128,6 +1128,24 @@
         return card;
       }
 
+      /* Overrides for the two things the automatic layout sometimes gets
+         wrong. Proportions, not positions - whatever is picked still has to
+         work on a projector and on somebody's phone. */
+      function choice(obj, key, fallback, choices) {
+        var seg = el('div.seg', choices.map(function (c) {
+          var on = (obj[key] || fallback) === c[0];
+          return el('button', { type: 'button', text: c[1], class: on ? 'on' : '',
+            title: c[2] || '',
+            onclick: function (e) {
+              obj[key] = c[0];
+              e.target.parentNode.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
+              e.target.classList.add('on');
+              saveSoon();
+            } });
+        }));
+        return seg;
+      }
+
       var media = mediaField(q, 'media', false, q.mediaHint);
       card.appendChild(el('div.q-body', [
         el('div.field', [
@@ -1163,6 +1181,14 @@
               }) : null
             ]);
           })),
+          el('div.row', { style: { marginTop: '12px', alignItems: 'center', gap: '10px' } }, [
+            el('span.hint', { text: 'Arrangement' }),
+            choice(q, 'optionLayout', 'auto', [
+              ['auto', 'Auto', 'Chosen from how long the answers are'],
+              ['row', 'In a row', 'Side by side, for short answers'],
+              ['stacked', 'Stacked', 'One per line, for long answers']
+            ])
+          ]),
           q.options.length < QC.MAX_OPTIONS ? el('button.btn.ghost.sm', {
             type: 'button', text: '+  Add another option',
             style: { marginTop: '12px', alignSelf: 'flex-start' },
@@ -1176,6 +1202,18 @@
           }) : el('span.hint', { style: { marginTop: '10px' },
             text: 'Six is the most you can have.' })
         ]),
+        /* Only worth showing once there is a picture to size. */
+        q.media ? el('div.field', [
+          el('label', { text: 'Picture size on the big screen' }),
+          el('span.hint', { text: 'How much of the slide it takes. The rest goes to the question and the answers.' }),
+          el('div', { style: { marginTop: '6px' } }, [
+            choice(q, 'mediaSize', 'fit', [
+              ['fit', 'Fit', 'Shares the leftover room'],
+              ['large', 'Large', 'Takes about twice the share'],
+              ['fill', 'Fill', 'Takes as much as the slide allows']
+            ])
+          ])
+        ]) : null,
         el('div.field', [
           el('label', { text: 'Extra note  (optional)' }),
           el('span.hint', { text: 'Shown with the answer: a bit of trivia or an explanation.' }),
