@@ -36,7 +36,7 @@
     return Net.call('api/login', 'POST', { name: name, password: password, invite: invite });
   };
   // Nickname only - no password, no invite code. Always a new account.
-  Net.join = function (name) { return Net.call('api/join', 'POST', { name: name }); };
+  Net.join = function (name, invite) { return Net.call('api/join', 'POST', { name: name, invite: invite }); };
   Net.logout = function () { return Net.call('api/logout', 'POST', {}); };
   Net.changePassword = function (oldPassword, newPassword) {
     return Net.call('api/change-password', 'POST', { oldPassword: oldPassword, newPassword: newPassword });
@@ -50,6 +50,9 @@
     return Net.call('api/admin/set-active', 'POST', { userId: userId, active: active });
   };
   Net.setRules = function (text) { return Net.call('api/rules', 'POST', { text: text }); };
+  // Site admin only: the other teams on this install.
+  Net.teams = function () { return Net.call('api/teams'); };
+  Net.addTeam = function (name, code) { return Net.call('api/teams', 'POST', { name: name, code: code }); };
   // Pass a code to choose one, or nothing at all to have one generated.
   Net.setInvite = function (code) { return Net.call('api/invite', 'POST', code === undefined ? {} : { code: code }); };
 

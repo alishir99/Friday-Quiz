@@ -39,7 +39,9 @@
       text: 'First time in, this creates your account with that password. Forgot it? Ask the admin to reset it from the Team page.' });
     var swap = el('button.btn.ghost.sm.block', { type: 'button',
       style: { marginTop: '12px' }, text: 'Just visiting? Join as a guest' });
-    var memberOnly = el('div.stack', { style: { gap: '12px' } }, [pass, inviteField]);
+    var memberOnly = el('div.stack', { style: { gap: '12px' } }, [pass]);
+    // One input, parked in whichever half of the form is currently showing.
+    var codeSlot = el('div.stack', { style: { gap: '12px' } }, [inviteField]);
 
     function setMode(asGuest) {
       guest = asGuest;
@@ -64,19 +66,22 @@
       if (!guest && !pass.value) { pass.focus(); return; }
       btn.disabled = true;
       err.hidden = true;
-      var req = guest ? QC.net.join(v) : QC.net.login(v, pass.value, invite.value.trim());
+      var code = invite.value.trim();
+      var req = guest ? QC.net.join(v, code) : QC.net.login(v, pass.value, code);
       req.then(function () { QC.boot(); })
         .catch(function (e) {
           err.textContent = e.message;
           err.hidden = false;
           btn.disabled = false;
-          if (guest) { name.focus(); }
-          else if (e.body && e.body.needInvite) {
+          /* Two reasons the server asks for a code: a brand-new account has
+             to quote one, or a name exists on more than one team and it is
+             what says which. Same field either way. */
+          if (e.body && (e.body.needInvite || e.body.needTeam)) {
             inviteField.hidden = false;
+            invite.placeholder = e.body.needTeam ? 'Your team’s code' : 'Invite code';
             invite.focus();
-          } else {
-            pass.focus();
-          }
+          } else if (guest) { name.focus(); }
+          else { pass.focus(); }
         });
     }
     btn.onclick = go;
@@ -93,7 +98,7 @@
         el('h1', { text: 'Friday Quiz' }),
         lede,
 
-        el('div.stack', { style: { gap: '12px' } }, [name, memberOnly]),
+        el('div.stack', { style: { gap: '12px' } }, [name, memberOnly, codeSlot]),
         err,
         el('div', { style: { marginTop: '20px' } }, [btn, swap]),
         note
@@ -320,7 +325,7 @@
 
     return el('div.stack', [
       el('div.page-head', [
-        el('h1', { text: 'The team' }),
+        el('h1', { text: (s.team && s.team.name) || 'The team' }),
         el('p.sub', { text: members.length + ' account' + (members.length === 1 ? '' : 's')
           + (onlineCount ? ' · ' + onlineCount + ' online now' : '') })
       ]),
@@ -345,6 +350,10 @@
             onclick: function () { removeMember(u); } }) : null
         ]);
       })),
+
+      /* The whole install, for whoever owns it. A quiz master runs one team
+         and never sees this. */
+      s.siteAdmin ? teamsCard() : null,
 
       /* Removed people are kept, not deleted, so every quiz they played still
          reads properly. Only the admin needs to see the list. */
@@ -471,6 +480,55 @@
 
     /* Forgot-password recovery: the admin resets it and relays the
        temporary one directly. */
+    /* Every team on the install, with its code, and a way to add one. Sits on
+       the Team page rather than a screen of its own: it is rare, and it belongs
+       next to the other settings. Loaded on demand - most people never see it. */
+    function teamsCard() {
+      var body = el('div', { style: { marginTop: '10px' } }, [el('p.muted', { text: 'Loading…' })]);
+      QC.net.teams().then(function (r) {
+        QC.clear(body);
+        QC.append(body, [
+          el('div.list', r.teams.map(function (t) {
+            return el('div.list-row' + (s.team && t.id === s.team.id ? '.is-mine' : ''), [
+              el('div', [
+                el('div.person', [el('span.nm', { text: t.name
+                  + (s.team && t.id === s.team.id ? '  ·  yours' : '') })]),
+                el('div.rl', { text: t.members + ' member' + (t.members === 1 ? '' : 's')
+                  + ' · ' + t.played + ' played'
+                  + (t.masterName ? ' · run by ' + t.masterName : ' · nobody in charge yet') })
+              ]),
+              el('div.spacer'),
+              el('code.team-code', { text: t.code || 'open', title: 'Their code' })
+            ]);
+          })),
+          el('button.btn.quiet.sm', { type: 'button', text: '+  New team',
+            style: { marginTop: '12px' }, onclick: addTeam })
+        ]);
+      }).catch(function (e) {
+        QC.clear(body);
+        QC.append(body, [el('p.auth-err', { text: e.message })]);
+      });
+
+      return el('div.card.flat', { style: { marginTop: '10px' } }, [
+        el('div.kicker', { text: 'Teams on this server' }),
+        body
+      ]);
+    }
+
+    function addTeam() {
+      QC.ask({
+        title: 'New team',
+        sub: 'They get their own members, rota and history. A code is made up unless you set one.',
+        placeholder: 'e.g. The Badgers', ok: 'Create'
+      }).then(function (name) {
+        if (!name) return;
+        QC.net.addTeam(name).then(function (r) {
+          QC.toast(r.team.name + ' created · code ' + r.team.code);
+          QC.render();
+        }).catch(function (e) { QC.toast(e.message); });
+      });
+    }
+
     function removeMember(u) {
       QC.confirm({
         title: 'Remove ' + u.name + '?',

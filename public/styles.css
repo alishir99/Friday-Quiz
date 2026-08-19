@@ -1309,3 +1309,13 @@ audio.media-player { height: 44px; }
 }
 
 @media print { .nav, .foot, .stage-bar { display: none !important; } }
+
+/* The site admin's list of teams. Their code is the useful part, so it reads
+   as something you copy rather than prose. */
+.team-code {
+  font-family: ui-monospace, monospace; font-size: 15px; font-weight: 700;
+  letter-spacing: .08em; padding: 4px 10px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+  color: var(--ink-2);
+}
+.list-row.is-mine { background: var(--surface-2); border-radius: var(--r-sm); }

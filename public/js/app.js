@@ -63,6 +63,10 @@
       app.appendChild(errorScreen(QC.route, err));
     }
 
+    // The brand shows which team you are looking at, not the app's name.
+    var brand = document.querySelector('.brand-name');
+    if (brand) brand.textContent = (QC.state.team && QC.state.team.name) || 'Friday Quiz';
+
     // A guest has no team page to speak of - nothing there applies to them.
     var meNow = QC.user(QC.state.me);
     var amGuest = !!(meNow && meNow.guest);
