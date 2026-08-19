@@ -72,6 +72,14 @@
                '<path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="1.8" ' +
                'stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+  /* Marks the footnote under a revealed answer. Drawn rather than typed: a
+     letter "i" in a CSS circle sits at whatever height the font feels like,
+     and this has to line up with one line of small text every time. */
+  QC.infoIcon = '<svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">' +
+    '<circle cx="10" cy="10" r="8.6" stroke="currentColor" stroke-width="1.5"/>' +
+    '<circle cx="10" cy="6.15" r="1.15" fill="currentColor"/>' +
+    '<path d="M10 9.1v5.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+
   QC.chev = '<svg width="9" height="14" viewBox="0 0 9 14" fill="none" aria-hidden="true">' +
             '<path d="M1.5 1L7.5 7L1.5 13" stroke="currentColor" stroke-width="2" ' +
             'stroke-linecap="round" stroke-linejoin="round"/></svg>';

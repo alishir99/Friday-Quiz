@@ -230,7 +230,7 @@
   function pLobby() {
     var L = live(), s = QC.state;
     var others = L.players.filter(function (id) { return id !== L.quizMasterId; });
-    return el('div.slide', [
+    return el('div.slide.lobby-slide', [
       el('div.s-kicker', { text: QC.fmtDate(s.upcoming.date) }),
       /* Never the topic, even though the quiz master could see it - they are
          the one with the screen shared, and this is the slide that sits up
@@ -337,11 +337,14 @@
           o.text.trim() ? el('span', { text: o.text }) : null
         ]);
       })),
+      /* No "Answer: A" line. The right option is already lit up green and
+         scaled forward - saying it again in words is the slide repeating
+         itself. All that is left to add is why, so that is all this is: a
+         footnote along the bottom, out of the way of the answers. */
       reveal
-        ? (q.note ? el('div.s-answer', [
-            el('div.lbl', { text: 'Answer' }),
-            el('div.val', { text: KEYS[q.correct] + ': ' + q.options[q.correct] }),
-            el('div.note', { text: q.note })
+        ? (q.note ? el('div.s-note', [
+            el('span.i', { html: QC.infoIcon, 'aria-hidden': 'true' }),
+            el('span.t', { text: q.note })
           ]) : null)
         : answerTally(L)
     ]);

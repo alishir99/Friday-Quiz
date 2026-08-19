@@ -707,8 +707,12 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
    picture is allowed to take what is left. */
 .slide > .s-q, .slide > .s-kicker, .slide > .s-opts, .slide > .tally { flex-grow: 0; }
 .s-opts { min-height: 0; }
-/* Whatever happens above it, the tally stays on the slide and stays last. */
-.slide > .tally { flex-shrink: 0; margin-top: auto; padding-top: clamp(10px, 2vh, 28px); }
+/* Whatever happens above it, the tally stays on the slide and stays last.
+   The answer footnote takes the same place - it is what replaces the tally
+   when the answers go up. */
+.slide > .tally, .slide > .s-note {
+  flex-shrink: 0; margin-top: auto; padding-top: clamp(10px, 2vh, 28px);
+}
 /* Centred vertically, but by margin rather than justify-content. With
    justify-content: center an overflowing slide has its top clipped off and no
    scroll can reach it - which is exactly what running the quiz from a phone
@@ -795,10 +799,36 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .s-opt.right .k { background: var(--good); color: #fff; border-color: var(--good); }
 .s-opt.wrong { opacity: .32; }
 
-/* The reveal, as a card set apart from the options rather than a rule ruled
-   across the slide. A line says "and now something else"; a card says "this
-   one is the answer", which is the thing being said. Centred and narrower
-   than the options above it, so the eye lands rather than scans. */
+/* Why that answer, once the answer itself is already obvious from the green.
+   A footnote along the foot of the slide: quiet, one line where it can be,
+   and nowhere near the answers it is annotating. The icon is what says "this
+   is an aside" without a heading having to say it. */
+/* Selector carries `.slide >` so it outweighs the `:last-child { margin-bottom:
+   auto }` rule above, which would otherwise hand the footnote half the leftover
+   room and float it up off the floor. A footnote sits on the floor. */
+.slide > .s-note {
+  display: flex; align-items: flex-start; justify-content: flex-start;
+  gap: clamp(8px, 1vh, 12px);
+  align-self: flex-start; max-width: min(1000px, 94%);
+  /* Reaches down into the slide's own bottom padding. The slide keeps that
+     margin so its content does not run into the stage bar, but a footnote is
+     exactly the thing that may sit in it. */
+  margin-bottom: -26px;
+  padding-top: clamp(20px, 3vh, 40px);
+  font-size: clamp(13px, min(1.15vw, 1.75vh), 18px);
+  line-height: 1.45; color: var(--ink-3); font-weight: 400;
+  text-align: left;
+  animation: revealIn .55s var(--ease-out) both;
+}
+.s-note .i { flex-shrink: 0; color: var(--ink-3); opacity: .8; margin-top: .05em; }
+.s-note .i svg {
+  width: clamp(14px, min(1.25vw, 1.9vh), 19px);
+  height: clamp(14px, min(1.25vw, 1.9vh), 19px);
+  display: block;
+}
+
+/* The tiebreaker still needs its answer spelled out - it is a number, and no
+   option lights up green to say which one it was. That one keeps the card. */
 .s-answer {
   align-self: center; width: 100%; max-width: min(820px, 92%);
   margin-top: clamp(20px, 3.2vh, 44px);
@@ -1052,6 +1082,21 @@ body.playing .app { padding: 0; max-width: none; }
 
 /* The lobby is a join screen first, like Kahoot's PIN slide: the QR is the
    biggest thing on it, with who has already joined off to the side. */
+/* The lobby is the one slide with a fixed, known list of things on it, and all
+   of them matter - a clipped invite code is a person who cannot join. So it is
+   budgeted rather than sized by eye: the heading gives up the room the join
+   card needs, and everything is in vh so the budget holds at any height. */
+/* And if some screen still defeats the budget, it scrolls rather than quietly
+   eating the invite code. A scrollbar on a slide is ugly; a code nobody can
+   read is worse, and it fails silently. */
+.lobby-slide { overflow-y: auto; }
+.lobby-slide .s-title { font-size: clamp(30px, min(4.4vw, 6.2vh), 68px); }
+.lobby-slide .s-kicker { margin-bottom: clamp(8px, 1.1vh, 14px); }
+.lobby-slide .s-sub {
+  font-size: clamp(16px, min(1.6vw, 2.4vh), 25px);
+  margin-top: clamp(8px, 1.2vh, 16px);
+}
+
 .lobby-grid {
   /* Keeps exactly its content's height. Given room to shrink, the box gets
      smaller but the join card inside it does not, so the card spills out and
@@ -1059,21 +1104,21 @@ body.playing .app { padding: 0; max-width: none; }
      sits under the hint, so there is nothing to gain by growing either. */
   flex: 0 0 auto;
   display: flex; align-items: flex-start; flex-wrap: wrap;
-  gap: clamp(28px, min(4vw, 6.0vh), 64px);
-  margin-top: clamp(32px, 5vh, 64px);
+  gap: clamp(24px, min(3.2vw, 4.8vh), 56px);
+  margin-top: clamp(18px, 2.8vh, 40px);
 }
 
 .lobby-join {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: clamp(22px, min(2.6vw, 3.9vh), 40px);
+  display: flex; flex-direction: column; align-items: center; gap: clamp(5px, .8vh, 10px);
+  padding: clamp(16px, min(1.9vw, 2.8vh), 30px);
   background: var(--surface-2); border-radius: 28px;
 }
-.lobby-join .qr-code { padding: clamp(10px, min(1.2vw, 1.8vh), 18px); border-radius: 18px; }
+.lobby-join .qr-code { padding: clamp(8px, min(1vw, 1.5vh), 14px); border-radius: 18px; }
 /* The floor is low on purpose. At 190px a short laptop window could not fit
    the card and the hint together, and something had to give. A phone camera
    reads 130px from a metre away, so shrinking is the cheaper thing to give. */
 .lobby-join .qr-code svg {
-  width: clamp(130px, min(17vw, 25vh), 320px); height: clamp(130px, min(17vw, 25vh), 320px);
+  width: clamp(120px, min(14vw, 21vh), 280px); height: clamp(120px, min(14vw, 21vh), 280px);
 }
 .lobby-join-label { font-size: clamp(18px, min(1.7vw, 2.55vh), 26px); font-weight: 650; }
 .lobby-join-or {
@@ -1087,7 +1132,8 @@ body.playing .app { padding: 0; max-width: none; }
 /* Read off a projector and typed on a phone, so it gets room to breathe and
    wide letter-spacing - the two things that make a code easy to copy. */
 .lobby-code {
-  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-soft);
+  margin-top: clamp(7px, 1vh, 12px); padding-top: clamp(7px, 1vh, 12px);
+  border-top: 1px solid var(--line-soft);
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   align-self: stretch;
 }
