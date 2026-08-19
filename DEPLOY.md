@@ -21,11 +21,16 @@ The `Dockerfile` in this repo is nine lines and needs no attention.
 
 ---
 
-## Deploy on Northflank (free)
+## Deploy on Northflank
 
-Free plan: 2 services, 1 vCPU, 1 GB RAM, a persistent volume, GitHub
-integration, and **no sleeping** — so the first person to open the link on a
-Friday doesn't wait for a cold start.
+> **Not free any more.** This was written when the free plan covered it; it no
+> longer does. Left here because the steps still work if you are paying, but
+> for a free setup see the Oracle Cloud VM below, and read *Getting past a
+> corporate filter* first if anyone will open this from a work machine.
+
+2 services, 1 vCPU, 1 GB RAM, a persistent volume, GitHub integration, and
+**no sleeping** — so the first person to open the link on a Friday doesn't
+wait for a cold start.
 
 ### 1. Push this repo to GitHub
 
@@ -100,6 +105,72 @@ things before committing:
 
 See [the Oracle Cloud walkthrough](#free-forever-on-an-oracle-cloud-vm) below —
 free forever, and it runs this same code unchanged.
+
+---
+
+## Getting past a corporate filter
+
+Symptom: the site loads fine at home and on mobile data, but a work laptop
+shows a company block page.
+
+It is almost never about your site. `duckdns.org` is a dynamic-DNS provider,
+and enterprise filters block that whole category by default because malware
+uses it for command-and-control. The suffix is what is blocked, not you. A
+newly registered domain of your own can hit the same wall, under a "newly
+registered domains" category, for a few weeks.
+
+What works is serving it from a domain the filter already trusts. Cloudflare
+Pages gives you `*.pages.dev`, which is categorised as developer hosting and
+generally allowed — and the app can keep running on the VM exactly as it is.
+
+The browser only ever talks to the Pages site. Cloudflare's edge does the
+talking to the VM, and Cloudflare is not behind the company filter.
+
+```
+  work laptop  ──►  quiz.pages.dev  ──►  the VM
+                    (allowed)            (blocked name, but the
+                                          browser never asks for it)
+```
+
+### Set it up
+
+1. **Cloudflare dashboard → Workers & Pages → Create → Pages → Connect to Git**,
+   and pick this repository.
+2. Build settings:
+   - Framework preset: **None**
+   - Build command: leave empty (there is no build step)
+   - **Build output directory: `public`**
+3. **Settings → Environment variables**, add:
+
+   | Name | Value |
+   |---|---|
+   | `ORIGIN` | `https://fridayquiz.duckdns.org` — wherever the VM answers |
+
+4. Deploy. You get `something.pages.dev`.
+
+`functions/api/[[path]].js` and `functions/media/[[path]].js` forward those two
+paths to `ORIGIN`; everything else is served straight from `public/` on
+Cloudflare's network, so the app itself loads fast and only the data goes to
+the VM.
+
+### The two things that break silently
+
+Both are covered by `test/proxy.mjs`, which runs the real proxy against a real
+server:
+
+- **The session cookie** has to survive both ways, and come back marked
+  `Secure`. The app decides that from `x-forwarded-proto`, which the proxy
+  sets — without it the browser drops the cookie on an https page and nobody
+  can sign in.
+- **`/api/events` has to stream.** It is the live feed and stays open for the
+  whole quiz. Anything that buffers it leaves every phone sitting on a blank
+  screen with no error.
+
+### Still keep the VM
+
+It is the origin, so it has to stay up. Direct access to
+`fridayquiz.duckdns.org` also still works for anyone not behind the filter,
+which makes it a useful fallback if Pages ever misbehaves mid-quiz.
 
 ---
 
