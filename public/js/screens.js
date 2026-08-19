@@ -917,9 +917,22 @@
          above this panel, and a second one a little lower down never lines up
          with it - which reads as a mistake rather than as structure. */
 
+      /* Whether a request is in flight. Drives the waiting indicator, which
+         matters more here than in most places: writing ten questions takes the
+         model the better part of a minute, and with nothing on screen a quiet
+         panel is indistinguishable from a broken one. */
+      var pending = false;
+
+      function thinking() {
+        return el('div.assist-msg.assistant.assist-pending', { role: 'status', 'aria-label': 'Quizzy is writing' }, [
+          el('div.assist-role', { text: 'Quizzy' }),
+          el('div.assist-dots', [el('i'), el('i'), el('i')])
+        ]);
+      }
+
       function renderBody() {
         QC.clear(body);
-        if (!history.length) QC.append(body, welcome());
+        if (!history.length && !pending) QC.append(body, welcome());
         history.forEach(function (m) {
           var msg = el('div.assist-msg.' + m.role, [
             el('div.assist-role', { text: m.role === 'user' ? 'You' : 'Quizzy' }),
@@ -929,13 +942,31 @@
             QC.append(msg, el('div.assist-card', [
               el('div.assist-card-title', { text: m.quiz.questions.length + ' question'
                 + (m.quiz.questions.length === 1 ? '' : 's') + ' and a tiebreaker' }),
-              el('div.assist-card-sub', { text: 'Drops straight into the editor beside you.' }),
-              el('button.btn.primary.sm', { type: 'button', style: { marginTop: '12px' },
-                text: 'Insert into quiz', onclick: function () { insertGenerated(m.quiz); } })
+              el('div.assist-card-sub', { text: m.inserted
+                ? 'These are the questions in the editor now.'
+                : 'Drops straight into the editor beside you.' }),
+              /* Ticked once it has actually gone in - and only then, since the
+                 replace warning gives you a chance to back out. Inserting
+                 replaces the whole quiz, so at most one of these can be true
+                 at a time and the others give their ticks up. */
+              el('button.btn.sm' + (m.inserted ? '.ghost.is-done' : '.primary'), {
+                type: 'button', style: { marginTop: '12px' },
+                disabled: m.inserted || null,
+                html: m.inserted ? QC.tick + ' <span>Inserted</span>' : null,
+                text: m.inserted ? null : 'Insert into quiz',
+                onclick: function () {
+                  insertGenerated(m.quiz, function () {
+                    history.forEach(function (o) { o.inserted = false; });
+                    m.inserted = true;
+                    renderBody();
+                  });
+                }
+              })
             ]));
           }
           QC.append(body, msg);
         });
+        if (pending) QC.append(body, thinking());
         body.scrollTop = body.scrollHeight;
       }
 
@@ -947,14 +978,16 @@
         input.value = '';
         resize();
         sendBtn.disabled = true;
+        pending = true;
         renderBody();
         QC.net.assist(history, quiz.topic || u.topic).then(function (r) {
           history.push({ role: 'assistant', text: r.reply, quiz: r.quiz });
-          renderBody();
         }).catch(function (e) {
           err.textContent = e.message;
           err.hidden = false;
         }).then(function () {
+          pending = false;
+          renderBody();
           sendBtn.disabled = !input.value.trim();
         });
       }
@@ -1031,7 +1064,7 @@
 
     /* Swap in a full quiz the assistant proposed. Replaces everything, so
        anyone with real progress gets a chance to back out first. */
-    function insertGenerated(parsed) {
+    function insertGenerated(parsed, onDone) {
       function apply() {
         quiz.questions = parsed.questions.slice(0, QC.MAX_QUESTIONS).map(function (q) {
           var options = (Array.isArray(q.options) ? q.options : []).slice(0, QC.MAX_OPTIONS)
@@ -1060,6 +1093,7 @@
         QC.screens._openQ = -1;
         renderList(); refreshHead(); saveSoon();
         QC.toast('Quiz filled in - read it over before you start');
+        if (onDone) onDone();
       }
       if (QC.quizProgress(quiz).done > 0) {
         QC.confirm({

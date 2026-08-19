@@ -611,6 +611,36 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .assist-card-title { font-size: 13px; font-weight: 550; color: var(--ink); }
 .assist-card-sub { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
 
+/* Already in the editor. Stays readable rather than going half-transparent the
+   way a disabled control usually does - it is not unavailable, it is finished,
+   and those should not look the same. */
+.btn.is-done, .btn.is-done[disabled] {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: var(--good); border-color: var(--good); background: var(--good-soft);
+  opacity: 1; cursor: default;
+}
+
+/* Writing ten questions takes the model most of a minute. Three dots, because
+   the one thing this has to say is "still going", and a percentage would be a
+   lie - nothing here knows how far along it is. */
+.assist-pending .assist-dots { display: flex; align-items: center; gap: 5px; height: 20px; }
+.assist-dots i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3);
+  animation: assistDot 1.25s var(--ease) infinite;
+}
+.assist-dots i:nth-child(2) { animation-delay: .16s; }
+.assist-dots i:nth-child(3) { animation-delay: .32s; }
+@keyframes assistDot {
+  0%, 60%, 100% { opacity: .28; transform: translateY(0); }
+  30%           { opacity: 1;   transform: translateY(-4px); }
+}
+/* Someone who has asked for less motion still needs to know it is working, so
+   the dots stop moving but keep pulsing rather than disappearing. */
+@media (prefers-reduced-motion: reduce) {
+  .assist-dots i { animation: assistDotFade 1.6s ease-in-out infinite; }
+  @keyframes assistDotFade { 0%, 100% { opacity: .3 } 50% { opacity: .85 } }
+}
+
 /* Composer: input and send share one rounded field that lights up on focus,
    rather than a bare textarea with a button parked underneath it. */
 .assist-foot { flex: none; padding: 14px 16px 16px; border-top: 1px solid var(--line-soft); }

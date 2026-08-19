@@ -80,6 +80,10 @@
     '<circle cx="10" cy="6.15" r="1.15" fill="currentColor"/>' +
     '<path d="M10 9.1v5.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 
+  QC.tick = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+            '<path d="M3 8.4l3.2 3.2L13 4.8" stroke="currentColor" stroke-width="2" ' +
+            'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
   QC.chev = '<svg width="9" height="14" viewBox="0 0 9 14" fill="none" aria-hidden="true">' +
             '<path d="M1.5 1L7.5 7L1.5 13" stroke="currentColor" stroke-width="2" ' +
             'stroke-linecap="round" stroke-linejoin="round"/></svg>';
