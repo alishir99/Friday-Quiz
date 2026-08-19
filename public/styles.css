@@ -98,8 +98,8 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--ink);
-  font-size: 17px;
-  line-height: 1.47;
+  font-size: 16px;
+  line-height: 1.5;
   letter-spacing: -.011em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -165,8 +165,8 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 }
 
 .page-head { margin-bottom: 32px; }
-.page-head h1 { font-size: 40px; }
-.page-head .sub { color: var(--ink-2); font-size: 19px; margin-top: 8px; letter-spacing: -.01em; }
+.page-head h1 { font-size: 31px; }
+.page-head .sub { color: var(--ink-2); font-size: 17px; margin-top: 8px; letter-spacing: -.01em; }
 
 .kicker {
   font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
@@ -187,7 +187,7 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-lg);
-  padding: 28px;
+  padding: 22px;
   box-shadow: var(--shadow);
 }
 .card.flat { box-shadow: none; background: var(--surface-2); border-color: transparent; }
@@ -197,12 +197,12 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--r-xl);
-  padding: 44px;
+  padding: 34px;
   box-shadow: var(--shadow);
   position: relative; overflow: hidden;
 }
-.hero h2 { font-size: 46px; letter-spacing: -.025em; }
-.hero .when { color: var(--ink-2); font-size: 19px; margin-top: 10px; }
+.hero h2 { font-size: 34px; letter-spacing: -.025em; }
+.hero .when { color: var(--ink-2); font-size: 17px; margin-top: 10px; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
@@ -212,7 +212,7 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  min-height: 46px; padding: 0 22px;
+  min-height: 42px; padding: 0 18px;
   border-radius: var(--pill); border: 1px solid transparent;
   background: var(--surface-2); color: var(--ink);
   font-size: 16px; font-weight: 500; cursor: pointer; text-decoration: none;
@@ -255,10 +255,10 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 .field .hint.warn { color: var(--warn); font-weight: 600; }
 
 .input, .textarea, .select {
-  width: 100%; min-height: 50px; padding: 13px 16px;
+  width: 100%; min-height: 44px; padding: 11px 14px;
   background: var(--surface); color: var(--ink);
   border: 1px solid var(--line); border-radius: var(--r-sm);
-  font-size: 17px; transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
+  font-size: 16px; transition: border-color .18s var(--ease), box-shadow .18s var(--ease);
 }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
 .input:focus, .textarea:focus, .select:focus {
@@ -300,7 +300,7 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
 .av-wrap .presence.on { background: var(--good); }
 
 .person { display: flex; align-items: center; gap: 13px; }
-.person .nm { font-weight: 550; font-size: 17px; }
+.person .nm { font-weight: 550; font-size: 16px; }
 .person .rl { color: var(--ink-3); font-size: 14px; }
 
 /* Role cards */
@@ -443,8 +443,8 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
   padding: 15px 20px; border-radius: var(--r);
   background: var(--surface-2);
 }
-.board-row .nm { font-size: 19px; font-weight: 550; letter-spacing: -.015em; }
-.board-row .sc { font-size: 24px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.board-row .nm { font-size: 17px; font-weight: 550; letter-spacing: -.015em; }
+.board-row .sc { font-size: 21px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .board-row.p1 { background: color-mix(in srgb, var(--gold) 16%, var(--surface-2)); }
 .board-row.last { background: var(--accent-soft); }
 
@@ -1362,7 +1362,7 @@ audio.media-player { height: 44px; }
 }
 .team-fold[open] > .team-sum::before { transform: rotate(90deg); }
 .team-fold[open] > .team-sum { border-bottom: 1px solid var(--line-soft); }
-.team-nm { font-size: 19px; font-weight: 600; letter-spacing: -.015em; }
+.team-nm { font-size: 17px; font-weight: 600; letter-spacing: -.015em; }
 .team-body { padding: 18px; }
 .btn.quiet.sm.danger { color: #d0342c; }
 .btn.quiet.sm.danger:hover { background: rgba(208,52,44,.12); }
@@ -1405,6 +1405,12 @@ audio.media-player { height: 44px; }
 
 /* The topic on its own, before the first question. Bigger than a question,
    because it is the only thing on the screen and the point of the moment. */
-.topic-slide { text-align: center; }
+.topic-slide {
+  text-align: center;
+  /* Nothing else is on this slide, so it sits in the middle of the screen
+     rather than at the top like a question. */
+  justify-content: center; align-items: center;
+}
+.topic-slide > * { margin-top: 0; margin-bottom: 0; }
 .topic-slide .s-title { font-size: clamp(38px, min(7vw, 10.5vh), 116px); margin-top: 8px; }
 @media (max-width: 700px) { .topic-slide .s-title { font-size: 32px; } }

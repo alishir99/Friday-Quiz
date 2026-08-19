@@ -207,6 +207,7 @@
 
     switch (L.phase) {
       case 'lobby': body = pLobby(); break;
+      case 'topic': body = pTopic(); break;
       case 'q':     body = pQuestion(false); break;
       case 'tb':    body = pTie(false); break;
       case 'gap':   body = pGap(); break;
@@ -258,6 +259,19 @@
         ])
       ]),
       el('p.s-hint', { text: 'Everyone answers on their own screen. Press Start when you are ready.' })
+    ]);
+  }
+
+  /* The subject on its own, before anything is asked. Kept quiet all week, so
+     it gets a slide rather than appearing in the corner of question one. The
+     quiz master sees it too - they are the one reading it out. */
+  function pTopic() {
+    var L = live(), s = QC.state;
+    var topic = L.topic || (s.upcoming && s.upcoming.topic) || '';
+    return el('div.slide.topic-slide', [
+      el('div.s-kicker', { text: 'Tonight’s topic' }),
+      el('h1.s-title', { text: topic || 'Anything goes' }),
+      el('p.s-sub', { text: L.questionCount + ' questions and a tiebreaker' })
     ]);
   }
 
