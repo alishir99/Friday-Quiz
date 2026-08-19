@@ -684,13 +684,26 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
   --pad: clamp(32px, min(5vw, 7.5vh), 80px);
 }
 
+/* A slide is a slide: it fits the screen, like presenting in PowerPoint. It
+   must never scroll, in either direction - a projector has no scrollbar and
+   nobody is going to reach for the mouse mid-question. Everything inside is
+   allowed to shrink instead, which is what min-height: 0 on the children buys.
+   Small screens are the exception and are handled further down. */
 .slide {
   flex: 1; min-height: 0;
   display: flex; flex-direction: column;
   padding: var(--pad);
   max-width: 1500px; width: 100%; margin: 0 auto;
-  overflow-y: auto;
+  overflow: hidden;
 }
+/* Every direct child may give up room rather than push the slide taller. */
+.slide > * { min-height: 0; flex-shrink: 1; }
+/* The question, the answers and the tally keep their content height; only the
+   picture is allowed to take what is left. */
+.slide > .s-q, .slide > .s-kicker, .slide > .s-opts, .slide > .tally { flex-grow: 0; }
+.s-opts { min-height: 0; }
+/* Whatever happens above it, the tally stays on the slide and stays last. */
+.slide > .tally { flex-shrink: 0; margin-top: auto; padding-top: clamp(10px, 2vh, 28px); }
 /* Centred vertically, but by margin rather than justify-content. With
    justify-content: center an overflowing slide has its top clipped off and no
    scroll can reach it - which is exactly what running the quiz from a phone
@@ -1004,7 +1017,9 @@ body.playing.presenting { overflow: hidden; }
 body.playing .app { padding: 0; max-width: none; }
 
 .stage-live {
-  position: fixed; inset: 0; z-index: 100;
+  /* Fixed to the viewport and clipped: nothing inside can make the page scroll,
+     in either direction. Presenting is a fixed frame, not a document. */
+  position: fixed; inset: 0; z-index: 100; overflow: hidden;
   background: var(--bg); color: var(--ink);
   display: flex; flex-direction: column;
   --pad: clamp(28px, min(5vw, 7.5vh), 80px);
@@ -1090,7 +1105,7 @@ body.playing .app { padding: 0; max-width: none; }
   font-size: clamp(20px, 2vw, 31px); }
 
 /* how many have answered */
-.tally { margin-top: clamp(28px, 4.4vh, 60px); }
+.tally { margin-top: clamp(14px, 2.4vh, 40px); }
 .tally-bar {
   height: 10px; background: var(--surface-2); border-radius: 6px; overflow: hidden;
   max-width: 620px;
@@ -1445,7 +1460,10 @@ audio.media-player { height: 44px; }
    and the answer will not fit at once. */
 @media (max-width: 700px) {
   .stage-live { --pad: 16px; }
-  .slide { justify-content: flex-start; }
+  /* The one place scrolling is allowed: a phone has too little height to fit a
+     question, four answers and a picture, and clipping would hide an answer. */
+  .slide { justify-content: flex-start; overflow-y: auto; }
+  .slide > .tally { margin-top: 0; }
   .slide > :first-child, .slide > :last-child { margin-top: 0; margin-bottom: 0; }
   .s-q { font-size: 22px; line-height: 1.25; }
   .s-title { font-size: 28px; }
