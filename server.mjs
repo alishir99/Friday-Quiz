@@ -257,7 +257,7 @@ const LLM_KEY = () => process.env.LLM_API_KEY || process.env.DEEPSEEK_API_KEY;
 /* Reasoning models (o3, gpt-5) reject max_tokens and want max_completion_tokens
    instead; everything else still takes max_tokens. Set this when you switch to
    one, or every request comes back 400. */
-const LLM_MAX_TOKENS_FIELD = process.env.LLM_MAX_TOKENS_FIELD || 'max_tokens';
+let LLM_MAX_TOKENS_FIELD = process.env.LLM_MAX_TOKENS_FIELD || 'max_tokens';
 const MAX_ASSIST_MESSAGE = 2000;
 const MAX_ASSIST_HISTORY = 20;
 const ASSIST_SYSTEM = `You are Quizzy, the quiz master's humble servant: a cheerful, slightly theatrical butler who helps write questions for a weekly pub-style trivia quiz. Keep that voice light - a wry aside is welcome, a paragraph of it is not.
@@ -350,7 +350,7 @@ async function askAssistant(history, topic) {
 
   const system = ASSIST_SYSTEM + (topic ? `\n\nThis week's topic, if it helps: "${topic}"` : '');
 
-  const res = await fetch(LLM_URL, {
+  const post = (tokensField) => fetch(LLM_URL, {
     method: 'POST',
     /* Without this a provider that stops answering hangs the request for ever,
        and the panel just sits there spinning. Ninety seconds is well past a
@@ -362,11 +362,28 @@ async function askAssistant(history, topic) {
     },
     body: JSON.stringify({
       model: LLM_MODEL,
-      [LLM_MAX_TOKENS_FIELD]: 4096,
+      [tokensField]: 4096,
       messages: [{ role: 'system', content: system }, ...history]
     })
   });
-  const body = await res.json();
+
+  let field = LLM_MAX_TOKENS_FIELD;
+  let res = await post(field);
+  let body = await res.json();
+
+  /* Reasoning models reject max_tokens and want max_completion_tokens. Rather
+     than make whoever swaps the provider know that, take the provider at its
+     word: it names the parameter it wants, so use it and try once more.
+     Remembered for the rest of the run, so it costs one wasted call per
+     restart rather than one per question. */
+  if (!res.ok && field === 'max_tokens'
+      && /max_completion_tokens/.test((body && body.error && body.error.message) || '')) {
+    field = LLM_MAX_TOKENS_FIELD = 'max_completion_tokens';
+    console.log('Assistant: this model wants max_completion_tokens; switching for the rest of this run.');
+    res = await post(field);
+    body = await res.json();
+  }
+
   if (!res.ok) throw new Error((body && body.error && body.error.message) || `Assistant error (${res.status})`);
   const text = (body.choices && body.choices[0] && body.choices[0].message && body.choices[0].message.content) || '';
   return extractQuiz(text.trim());
@@ -402,7 +419,14 @@ function todayISO() {
    ISO dates compare correctly as strings, which is why they are kept that way. */
 function effectiveDate(iso) {
   const today = todayISO();
-  return (!iso || iso < today) ? today : iso;
+  if (!iso || iso < today) return today;
+  /* And never further out than the coming Friday. Finishing a quiz books the
+     next one a week later, so a handful played in one afternoon march the date
+     off into the future and it never walks back - which is how the board came
+     to say September 4 in the middle of August. Nothing in the app schedules
+     further ahead than the next Friday, so anything past it is drift. */
+  const friday = nextFriday();
+  return iso > friday ? friday : iso;
 }
 
 function blankQuiz(authorId, topic) {
@@ -1615,8 +1639,10 @@ async function api(req, res, path) {
     team.history.push({
       id: live.id,
       // The day it was played, which is not the day it was booked for if it
-      // slipped. playedAt below keeps the exact moment either way.
-      date: effectiveDate(u.date),
+      // slipped - or if it was brought forward. Said plainly rather than
+      // derived from the booking, which is what let a quiz played in August
+      // file itself under September.
+      date: todayISO(),
       topic: u.topic,
       quizMasterId: u.quizMasterId,
       topicPickerId: u.topicPickerId,
