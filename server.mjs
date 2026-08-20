@@ -809,7 +809,12 @@ function stateFor(userId, team) {
     revealMode: REVEAL_MODES.includes(team.revealMode) ? team.revealMode : 'end',
     upcoming: up ? {
       ...up,
-      date: effectiveDate(up.date),
+      /* Today, plainly. This is the date on the dashboard and on the lobby
+         slide, and it is read as "what day is this happening" - so on a
+         Thursday it has to say Thursday, whatever Friday the rota booked.
+         The booking itself still lives in up.date and still drives the rota;
+         it is only what gets shown that follows the calendar. */
+      date: todayISO(),
       topic: canSeeTopic ? up.topic : '',
       // Everyone still sees *that* a topic has been picked, just not what it is.
       topicSet: !!String(up.topic || '').trim(),
