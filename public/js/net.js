@@ -18,16 +18,22 @@
       body: body ? JSON.stringify(body) : undefined,
       credentials: 'same-origin'
     }).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (j) {
+      /* A body that will not parse means the answer did not come from the app
+         at all - Cloudflare or Caddy generated it, and their error pages are
+         HTML. Worth saying so: "Request failed (502)" sent us looking at the
+         app for a fault that was never in it. */
+      return r.json().catch(function () { return { notJson: true }; }).then(function (j) {
         if (!r.ok) {
-          var err = new Error(j.error || ('Request failed (' + r.status + ')'));
+          var err = new Error(j.error || (j.notJson
+            ? 'The app never answered - something between your browser and it returned ' + r.status + '.'
+            : 'Request failed (' + r.status + ')'));
           // Callers sometimes need more than the message - the sign-in screen
           // reveals its invite field off the flag the server sends back.
           err.body = j;
           err.status = r.status;
           throw err;
         }
-        return j;
+        return j.notJson ? {} : j;
       });
     });
   };

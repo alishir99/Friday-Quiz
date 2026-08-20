@@ -352,6 +352,10 @@ async function askAssistant(history, topic) {
 
   const res = await fetch(LLM_URL, {
     method: 'POST',
+    /* Without this a provider that stops answering hangs the request for ever,
+       and the panel just sits there spinning. Ninety seconds is well past a
+       slow ten-question generation and well short of anyone's patience. */
+    signal: AbortSignal.timeout(90_000),
     headers: {
       authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json'
@@ -1466,7 +1470,13 @@ async function api(req, res, path) {
       const out = await askAssistant(history, String(topic || '').slice(0, 200));
       return json(res, 200, { ok: true, reply: out.reply, quiz: out.quiz });
     } catch (e) {
-      return json(res, 502, { error: e.message });
+      /* Logged, not only returned. A failed quiz generation used to leave
+         nothing behind at all, so "Request failed (502)" on the screen came
+         with an empty journal and nothing to act on. `cause` is where Node
+         puts the real reason when fetch itself fails. */
+      console.error('Assistant failed:', (e && e.message) || e,
+        e && e.cause ? '| cause: ' + ((e.cause && e.cause.message) || e.cause) : '');
+      return json(res, 502, { error: (e && e.message) || 'The assistant did not answer' });
     }
   }
 
