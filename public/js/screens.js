@@ -805,14 +805,15 @@
     var s = QC.state, u = s.upcoming;
     if (!u) { location.hash = '#/'; return el('div'); }
 
+    /* Home, rather than a locked door. Nothing in the app links here unless
+       you are the quiz maker, so the only ways to arrive are an address bar
+       left over from the account you just switched away from, or somebody
+       else's link - and neither deserves a padlock and a dead end. The toast
+       says why, so it is not a silent bounce. */
     if (!QC.isMaster()) {
-      return el('div.empty', { style: { marginTop: '40px' } }, [
-        el('div', { style: { fontSize: '46px', marginBottom: '12px' } }, '🔒'),
-        el('div.big', { text: 'Only the quiz maker can write this quiz' }),
-        el('p', { style: { marginTop: '8px' } }, QC.name(u.quizMasterId) + ' is writing it this week.'),
-        el('div.row', { style: { justifyContent: 'center', marginTop: '22px' } },
-          [el('a.btn.ghost', { href: '#/', 'data-nav': '', text: 'Back' })])
-      ]);
+      QC.toast(QC.name(u.quizMasterId) + ' is writing this week’s quiz');
+      location.hash = '#/';
+      return el('div');
     }
 
     if (!(u.topic || '').trim()) {
