@@ -88,7 +88,20 @@
       err.hidden = true;
       var code = invite.value.trim();
       var req = guest ? QC.net.join(v, code) : QC.net.login(v, pass.value, code);
-      req.then(function () { QC.boot(); })
+      /* Home, whatever address they arrived at. Someone sent a link to #/build
+         lands on "only the quiz maker can write this quiz" the moment they
+         sign in, which reads as being turned away at the door rather than as
+         having followed a link meant for somebody else. */
+      req.then(function () {
+        /* replaceState rather than setting location.hash: assigning to it
+           fires hashchange, which renders once against the state we have not
+           fetched yet, and the sign-in screen flashes back before boot lands.
+           This also leaves no trip back to #/build in the history. */
+        if (location.hash && location.hash !== '#/') {
+          history.replaceState(null, '', location.pathname + location.search + '#/');
+        }
+        QC.boot();
+      })
         .catch(function (e) {
           err.textContent = e.message;
           err.hidden = false;
