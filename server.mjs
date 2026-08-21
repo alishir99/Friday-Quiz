@@ -508,13 +508,14 @@ function quizReady(quiz) {
 /* 'topic' is a slide of its own between the lobby and the first question: the
    subject is a surprise until the quiz actually starts, so it deserves a
    moment rather than being glimpsed in the corner of question one. */
-const PHASES = ['lobby', 'topic', 'q', 'tb', 'gap', 'a', 'tba', 'board', 'roles'];
+/* 'coin' only exists when two people finish dead level - see coinToss(). */
+const PHASES = ['lobby', 'topic', 'q', 'tb', 'gap', 'a', 'tba', 'coin', 'board', 'roles'];
 const REVEAL_MODES = ['end', 'each'];
 const revealMode = (live) => (live && live.reveal === 'each') ? 'each' : 'end';
 
 /* qCount is however many questions are in the quiz actually being played,
    not a fixed number: the quiz master can add more than the starting ten. */
-function advance(live, qCount) {
+function advance(live, qCount, coin) {
   const { phase, index } = live;
   const each = revealMode(live) === 'each';
 
@@ -539,11 +540,12 @@ function advance(live, qCount) {
     else { live.phase = 'tba'; }
     return;
   }
-  if (phase === 'tba') { live.phase = 'board'; return; }
+  if (phase === 'tba') { live.phase = coin ? 'coin' : 'board'; return; }
+  if (phase === 'coin') { live.phase = 'board'; return; }
   if (phase === 'board') { live.phase = 'roles'; return; }
 }
 
-function back(live, qCount) {
+function back(live, qCount, coin) {
   const { phase, index } = live;
   const each = revealMode(live) === 'each';
 
@@ -571,7 +573,8 @@ function back(live, qCount) {
     if (each) { live.phase = 'tb'; return; }
     live.phase = 'a'; live.index = qCount - 1; return;
   }
-  if (phase === 'board') { live.phase = 'tba'; return; }
+  if (phase === 'coin') { live.phase = 'tba'; return; }
+  if (phase === 'board') { live.phase = coin ? 'coin' : 'tba'; return; }
   if (phase === 'roles') { live.phase = 'board'; return; }
 }
 
@@ -585,20 +588,25 @@ function liveQuestionCount(team, live) {
   return (up && up.quiz && up.quiz.questions.length) || QUESTION_COUNT;
 }
 
-const answersRevealed = (live) => !!live && ['gap', 'a', 'tba', 'board', 'roles'].includes(live.phase);
+const DONE_PHASES = ['tba', 'coin', 'board', 'roles'];
 
-/* How many answers are public, counting from the first question. In 'end' mode
-   it is all or nothing. In 'each' mode it walks forward one at a time, and the
-   ones still to come have to stay off the wire - otherwise revealing question
-   one would hand devtools the whole rest of the quiz. */
+/* How many answers are public, counting from the first question. Both modes
+   walk the reveal forward one question at a time - the ones still to come stay
+   off the wire, otherwise revealing question one hands devtools the rest of
+   the quiz, and a running score would be a final score from the first slide.
+
+   The two modes differ only in where the walk starts. 'each' has already shown
+   every answer up to the question on screen; 'end' has shown none of them
+   until the run of answer slides begins. */
 function revealedCount(live, qCount) {
   if (!live) return 0;
+  if (DONE_PHASES.includes(live.phase)) return qCount;
+  if (live.phase === 'a') return live.index + 1;         // this one included
   if (revealMode(live) === 'each') {
-    if (['tb', 'gap', 'tba', 'board', 'roles'].includes(live.phase)) return qCount;
-    if (live.phase === 'a') return live.index + 1;
+    if (['tb', 'gap'].includes(live.phase)) return qCount;
     return live.index;                       // on 'q': everything before it
   }
-  return answersRevealed(live) ? qCount : 0;
+  return 0;                                  // 'end': nothing until the 'a' run
 }
 
 /* scoring */
@@ -610,13 +618,11 @@ function scoreFor(userId, quiz, live) {
   return score;
 }
 
-function rankLive(team) {
+/* Everyone who played, best first, before the coin has had its say. */
+function rankRows(team) {
   const live = team && team.live;
-  // Once the week is committed the ranking is frozen. upcoming has already
-  // rolled over to a blank next Friday and can no longer be re-scored.
-  if (live && live.final) return live.final.ranking;
   const quiz = team.upcoming && team.upcoming.quiz;
-  if (!quiz) return [];
+  if (!live || !quiz) return [];
   const tieAnswer = Number(quiz.tieBreaker.answer);
   const hosted = {};
   team.history.forEach((s) => { hosted[s.quizMasterId] = (hosted[s.quizMasterId] || 0) + 1; });
@@ -644,11 +650,84 @@ function rankLive(team) {
     a.hosted - b.hosted ||
     a.name.localeCompare(b.name));
 
-  rows.forEach((r, i) => {
-    r.place = i + 1;
-    const same = (o) => o && o.score === r.score && o.diff === r.diff;
-    r.unresolved = !!(same(rows[i - 1]) || same(rows[i + 1]));
-  });
+  rows.forEach((r, i) => { r.place = i + 1; });
+  return rows;
+}
+
+const SIDES = ['heads', 'tails'];
+
+/* THE TOSS.
+
+   The wooden spoon writes next Friday's quiz; whoever finished just above them
+   picks the topic. When those two finish dead level - same score, and the same
+   distance out on the tiebreaker - there is nothing left to say which of them
+   takes which job. The old answer (whoever had hosted fewer quizzes, then
+   alphabetical order) settled it quietly and settled it the same way every
+   time. That is a habit, not a tiebreak. So they call it and the room watches
+   a coin land.
+
+   Only ever the bottom two, and only ever two: this exists to hand out those
+   two jobs. Three level at the bottom is a raffle, and no coin settles that.
+
+   Nothing is decided here - live.coin holds the calls and, once the quiz maker
+   has actually flipped it, the result. This function runs on every push, so it
+   must never be the thing that decides: a coin that lands somewhere new forty
+   times a second is not a coin. */
+function coinToss(team) {
+  const live = team && team.live;
+  if (!live) return null;
+  if (live.final) return live.final.coin || null;
+
+  // Only the people actually in line for the jobs. A guest is here for one
+  // night and never inherits the quiz, so a guest cannot be in the toss.
+  const rows = rankRows(team).filter((r) => !isGuest(team, r.userId) && !isRemoved(team, r.userId));
+  const level = (a, b) => !!a && !!b && a.score === b.score && a.diff === b.diff;
+  const spoon = rows[rows.length - 1], above = rows[rows.length - 2];
+
+  if (!level(above, spoon) || level(rows[rows.length - 3], above)) {
+    live.coin = null;
+    return null;
+  }
+
+  const pair = [above, spoon];
+  // Keyed on who is tied, so a late answer that changes the pair starts over.
+  const key = pair.map((r) => r.userId).join('|');
+  if (!live.coin || live.coin.key !== key) live.coin = { key, calls: {}, result: null };
+
+  const calls = live.coin.calls, result = live.coin.result;
+  const won = result ? pair.find((r) => calls[r.userId] === result) : null;
+  const lost = won ? pair.find((r) => r.userId !== won.userId) : null;
+
+  return {
+    key,
+    result,
+    winnerId: won ? won.userId : null,      // picks the topic
+    loserId: lost ? lost.userId : null,     // writes the quiz
+    players: pair.map((r) => ({
+      userId: r.userId, name: r.name, score: r.score, call: calls[r.userId] || null
+    }))
+  };
+}
+
+function rankLive(team) {
+  const live = team && team.live;
+  // Once the week is committed the ranking is frozen. upcoming has already
+  // rolled over to a blank next Friday and can no longer be re-scored.
+  if (live && live.final) return live.final.ranking;
+
+  const rows = rankRows(team);
+  const toss = coinToss(team);
+  /* Whoever lost the toss takes the lower place - the wooden spoon is the one
+     writing next week's quiz, and the board has to say so. Anyone sitting
+     between them scored the same, so nobody is stepped over. */
+  if (toss && toss.loserId) {
+    const w = rows.findIndex((r) => r.userId === toss.winnerId);
+    const l = rows.findIndex((r) => r.userId === toss.loserId);
+    if (w > -1 && l > -1 && w > l) {
+      [rows[w], rows[l]] = [rows[l], rows[w]];
+      rows.forEach((r, i) => { r.place = i + 1; });
+    }
+  }
   return rows;
 }
 
@@ -708,17 +787,26 @@ function deriveRoles(team, rows) {
     };
   }
   const last = eligible[eligible.length - 1];
+  const toss = coinToss(team);
+  // True when these two are the pair a coin has just separated.
+  const byCoin = !!(toss && toss.loserId && toss.loserId === last.userId);
   /* Whoever won never gets a job. With only two playing, "second from last" is
      the winner, so the wooden spoon took the quiz and handed the topic to the
-     person who had just beaten them. Below three, one person takes both. */
-  const second = eligible.length > 2 ? eligible[eligible.length - 2] : last;
+     person who had just beaten them. Below three, one person takes both -
+     unless a coin split them, in which case neither of them beat the other and
+     the two jobs go one each, which is the entire point of having tossed. */
+  const second = (eligible.length > 2 || byCoin) ? eligible[eligible.length - 2] : last;
   const qCount = liveQuestionCount(team, team.live);
   return {
     quizMasterId: last.userId,
     topicPickerId: second.userId,
     reason: {
-      master: `Finished last (${last.score}/${qCount})`,
-      picker: `Finished second from last (${second.score}/${qCount})`
+      master: byCoin
+        ? `Lost the toss, level on ${last.score}/${qCount}`
+        : `Finished last (${last.score}/${qCount})`,
+      picker: byCoin
+        ? `Won the toss, level on ${second.score}/${qCount}`
+        : `Finished second from last (${second.score}/${qCount})`
     }
   };
 }
@@ -769,13 +857,14 @@ function stateFor(userId, team) {
   const isMaster = !!up && up.quizMasterId === userId;
   const isPicker = !!up && up.topicPickerId === userId;
   const live = team.live;
-  // In 'each' mode answersRevealed() is true from the first answer onwards, so
-  // it can no longer be the gate on its own - revealed counts the questions
-  // that are actually done, and the rest stay redacted.
-  const canSeeAnswers = isMaster || (revealMode(live) !== 'each' && answersRevealed(live));
+  /* Only the quiz master holds the whole answer sheet. Everybody else is
+     handed exactly what has been shown, counted by revealedCount() - one gate
+     for both modes, so 'end' can no longer post the lot the moment the answer
+     slides begin. */
+  const canSeeAnswers = isMaster;
   const qCount = liveQuestionCount(team, live);
   const revealed = isMaster ? qCount : revealedCount(live, qCount);
-  const tieRevealed = isMaster || (!!live && ['tba', 'board', 'roles'].includes(live.phase));
+  const tieRevealed = isMaster || (!!live && DONE_PHASES.includes(live.phase));
   // The topic is a surprise for the rest of the team: the picker chose it and
   // the quiz master has to write to it, nobody else needs to know. It stops
   // being a secret once the quiz actually starts and it goes up on the big
@@ -830,6 +919,10 @@ function stateFor(userId, team) {
     const masterId = live.final ? live.final.quizMasterId : (up && up.quizMasterId);
     const others = live.players.filter((p) => p !== masterId);
     const ranking = ['board', 'roles'].includes(live.phase) ? rankLive(team) : null;
+    /* The toss for the two jobs. Sent from 'tba' so the quiz maker's Next
+       button can say what is coming; nothing is held back, because until they
+       actually flip it there is no result to hold back. */
+    const toss = ['tba', 'coin', 'board', 'roles'].includes(live.phase) ? coinToss(team) : null;
 
     out.live = {
       id: live.id,
@@ -852,11 +945,16 @@ function stateFor(userId, team) {
          nothing yet from a genuine nought. */
       myScore: myScoreSoFar(team, live, userId, revealed),
       // Held back until the tiebreaker answer is up, like the answers are.
-      tieRows: ['tba', 'board', 'roles'].includes(live.phase) ? tieRows(team) : null,
+      tieRows: DONE_PHASES.includes(live.phase) ? tieRows(team) : null,
       ranking,
       nextRoles: live.phase === 'roles'
         ? (live.final ? live.final.roles : (live.roleOverride || deriveRoles(team, rankLive(team))))
         : null,
+      coin: toss,
+      // How far the quiz has got, and how far the answers have: -1 for neither.
+      // Together these are what closes a question the slides have gone back to.
+      asked: live.asked ?? -1,
+      shown: live.shown ?? -1,
       questionCount: qCount,
       reveal: revealMode(live),
       committed: !!live.committed
@@ -1093,7 +1191,7 @@ async function api(req, res, path) {
     const guestTeam = quoted ? all.find((t) => sameCode(quoted, t.code)) : (all.length === 1 ? all[0] : null);
     if (!guestTeam) {
       return json(res, 403, {
-        error: quoted ? 'That code does not match any team.' : 'You need the code for tonight’s quiz.',
+        error: quoted ? 'That code does not match any team.' : 'You need the code for today’s quiz.',
         needTeam: true
       });
     }
@@ -1576,7 +1674,24 @@ async function api(req, res, path) {
     if (!requireUser()) return;
     if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker controls the slides' });
     if (!team.live) return json(res, 400, { error: 'Nothing running' });
-    (path.endsWith('advance') ? advance : back)(team.live, liveQuestionCount(team, team.live));
+    /* The coin decides which of those two writes next week's quiz, so it
+       cannot be walked past unflipped. Back still works, and the flip needs
+       no one's permission but the quiz maker's, so this strands nobody. */
+    if (path.endsWith('advance') && team.live.phase === 'coin') {
+      const pending = coinToss(team);
+      if (pending && !pending.result) return json(res, 409, { error: 'Flip the coin first' });
+    }
+    (path.endsWith('advance') ? advance : back)(
+      team.live, liveQuestionCount(team, team.live), !!coinToss(team));
+    /* Two high-water marks, because stepping back is exactly the move that
+       would otherwise clear them: how far the questions have got, and how far
+       the answers have. Neither goes down. */
+    if (team.live.phase === 'q') {
+      team.live.asked = Math.max(team.live.asked ?? -1, team.live.index);
+    }
+    if (team.live.phase === 'a') {
+      team.live.shown = Math.max(team.live.shown ?? -1, team.live.index);
+    }
     broadcast(team);
     return json(res, 200, { ok: true, phase: team.live.phase, index: team.live.index });
   }
@@ -1587,6 +1702,22 @@ async function api(req, res, path) {
     const live = team.live;
     if (!live || live.phase !== 'q') return json(res, 409, { error: 'Not taking answers now' });
     if (me === team.upcoming.quizMasterId) return json(res, 403, { error: 'You wrote this one' });
+    /* Changing your mind while the question is up is the whole point. Once the
+       quiz has left it, it is done - and the quiz maker stepping back does not
+       undo that, or a question could be revised at leisure while it is re-read
+       to the room.
+
+       Two separate walls, because they close off different things. Once the
+       answer has been on the board nobody may touch that question at all. But
+       merely having moved on only locks the people who already answered:
+       somebody who missed it entirely can still catch up, which is usually why
+       the quiz maker went back. */
+    if (live.index <= (live.shown ?? -1)) {
+      return json(res, 409, { error: 'That answer has already been shown' });
+    }
+    if (live.index < (live.asked ?? -1) && (live.answers[me] || {})[live.index] !== undefined) {
+      return json(res, 409, { error: 'The quiz has moved on from that one' });
+    }
     if (!live.players.includes(me)) live.players.push(me);
     live.answers[me] = live.answers[me] || {};
     live.answers[me][live.index] = Number(option);
@@ -1615,6 +1746,51 @@ async function api(req, res, path) {
     return json(res, 200, { ok: true });
   }
 
+  /* One of the two calls heads or tails. Theirs to call and nobody else's -
+     the quiz maker holds every other control in the game, but not this one. */
+  if (path === '/api/live/call' && req.method === 'POST') {
+    if (!requireUser()) return;
+    const live = team.live;
+    if (!live || live.phase !== 'coin') return json(res, 409, { error: 'Not calling it now' });
+    const toss = coinToss(team);
+    if (!toss) return json(res, 409, { error: 'There is nothing to call' });
+    if (toss.result) return json(res, 409, { error: 'It has already been flipped' });
+    if (!toss.players.some((p) => p.userId === me)) {
+      return json(res, 403, { error: 'This one is not yours to call' });
+    }
+    const { side } = await readBody(req);
+    if (!SIDES.includes(side)) return json(res, 400, { error: 'Heads or tails' });
+    // One side each, and whoever called first keeps it.
+    const taken = Object.keys(live.coin.calls)
+      .some((id) => id !== me && live.coin.calls[id] === side);
+    if (taken) return json(res, 409, { error: 'They called that one' });
+    live.coin.calls[me] = side;
+    broadcast(team);
+    return json(res, 200, { ok: true, side });
+  }
+
+  /* The quiz maker flips it, in the room, in front of everyone. */
+  if (path === '/api/live/flip' && req.method === 'POST') {
+    if (!requireUser()) return;
+    if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker flips it' });
+    const live = team.live;
+    if (!live || live.phase !== 'coin') return json(res, 409, { error: 'Nothing to flip' });
+    const toss = coinToss(team);
+    if (!toss) return json(res, 409, { error: 'Nothing to flip' });
+    // Landing twice would be a re-roll, so a second press is simply the first.
+    if (toss.result) return json(res, 200, { ok: true, result: toss.result });
+
+    /* Anyone who never called takes the side left over. A coin still lands if
+       one of them has wandered off, and the call that was made still stands. */
+    const spare = SIDES.filter((side) => !Object.values(live.coin.calls).includes(side));
+    toss.players.forEach((p) => {
+      if (!live.coin.calls[p.userId]) live.coin.calls[p.userId] = spare.pop() || SIDES[0];
+    });
+    live.coin.result = SIDES[Math.random() < 0.5 ? 0 : 1];
+    broadcast(team);
+    return json(res, 200, { ok: true, result: live.coin.result });
+  }
+
   if (path === '/api/live/roles' && req.method === 'POST') {
     if (!requireUser()) return;
     if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker can change this' });
@@ -1638,6 +1814,7 @@ async function api(req, res, path) {
     if (live.committed) return json(res, 200, { ok: true });
 
     const rows = rankLive(team);
+    const toss = coinToss(team);           // before live.final, which caches it
     const roles = live.roleOverride || deriveRoles(team, rows);
     const u = team.upcoming;
 
@@ -1662,6 +1839,7 @@ async function api(req, res, path) {
     // Freeze what the slides still need before upcoming rolls over.
     live.final = {
       ranking: rows,
+      coin: toss,
       roles,
       topic: u.topic,
       quizMasterId: u.quizMasterId,

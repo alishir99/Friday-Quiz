@@ -114,6 +114,9 @@
   Net.answer  = function (option) { return Net.call('api/live/answer', 'POST', { option: option }); };
   Net.tiebreak = function (value) { return Net.call('api/live/tiebreak', 'POST', { value: value }); };
   Net.liveRoles = function (m, p) { return Net.call('api/live/roles', 'POST', { quizMasterId: m, topicPickerId: p }); };
+  // Settling the tie at the bottom: they call it, the quiz maker flips it.
+  Net.callIt   = function (side) { return Net.call('api/live/call', 'POST', { side: side }); };
+  Net.flip     = function () { return Net.call('api/live/flip', 'POST', {}); };
   // 'end' = all the answers after the last question, 'each' = straight away.
   Net.reveal  = function (mode) { return Net.call('api/live/reveal', 'POST', { mode: mode }); };
   Net.finish  = function () { return Net.call('api/live/finish', 'POST', {}); };
@@ -150,6 +153,8 @@
     if (JSON.stringify(x.myAnswers) !== JSON.stringify(y.myAnswers)) return false;
     if (x.myTieGuess !== y.myTieGuess) return false;
     if (JSON.stringify(x.myScore) !== JSON.stringify(y.myScore)) return false;
+    // A call or a landed coin changes the slide, not just a counter.
+    if (JSON.stringify(x.coin) !== JSON.stringify(y.coin)) return false;
     // A roster change shows up as faces in the lobby, so that redraws too.
     if ((x.players || []).length !== (y.players || []).length) return false;
     if (!!x.ranking !== !!y.ranking) return false;

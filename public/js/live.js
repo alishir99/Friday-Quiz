@@ -191,6 +191,209 @@
     });
   }
 
+  /* THE TOSS: who writes next week's quiz.
+
+     The wooden spoon writes it and whoever finished just above them picks the
+     topic. When those two finish dead level there is nothing left to say which
+     of them takes which job, so they call it and the quiz maker flips a coin
+     in front of the room.
+
+     Nothing here decides anything - the server holds the calls and the result.
+     This is the object on the table: it shows what has been called, it takes
+     the quiz maker's press, and it lands the way it was already told to. */
+
+  var SIDES = [
+    { key: 'heads', mark: 'H', word: 'Heads' },
+    { key: 'tails', mark: 'T', word: 'Tails' }
+  ];
+
+  function sideWord(key) {
+    var s = SIDES.filter(function (x) { return x.key === key; })[0];
+    return s ? s.word : '';
+  }
+
+  function callerOn(c, side) {
+    return c.players.filter(function (p) { return p.call === side; })[0] || null;
+  }
+
+  /* Remembered so the coin spins on the push that lands it and not on every
+     push after it. A phone reconnecting must not send it round again. */
+  var lastResult = null;
+
+  /* The coin itself. Both faces carry their side's letter and, once it has been
+     called, the name of whoever called it - so a coin sitting on the table is
+     already showing the room what is riding on each face.
+
+     Which way up it lands is a class rather than a computed angle: heads is
+     five turns, tails five and a half, and the motion stays in the CSS where
+     prefers-reduced-motion can take it away. */
+  function coinPiece(c, big, live_) {
+    var landed = c.result;
+    var spin = landed && landed !== lastResult;
+    if (landed) lastResult = landed;
+
+    var stage = el('div.coin-stage'
+      + (big ? '.big' : '')
+      + (landed === 'tails' ? '.tails' : '')
+      + (spin ? '.flipping' : ''), [
+      el('div.coin', SIDES.map(function (side) {
+        var who = callerOn(c, side.key);
+        return el('div.coin-face.' + side.key, [
+          el('span.coin-mark', { text: side.mark }),
+          who ? el('span.coin-legend', { text: who.name.split(/\s+/)[0] }) : null
+        ]);
+      }))
+    ]);
+
+    if (!live_) {
+      stage.setAttribute('role', 'img');
+      stage.setAttribute('aria-label', landed
+        ? sideWord(landed) + '. ' + (c.winnerId ? QC.name(c.winnerId) + ' called it.' : '')
+        : 'A coin, waiting to be flipped');
+      return stage;
+    }
+
+    /* The quiz maker picks it up and flips it. A real button, so it is
+       reachable from a keyboard and announces itself - this is the only control
+       on the slide and the whole room is waiting on it. */
+    var btn = el('button.coin-flip', {
+      type: 'button', 'aria-label': 'Flip the coin',
+      onclick: function () {
+        btn.disabled = true;
+        QC.net.flip().catch(function (e) { QC.toast(e.message); btn.disabled = false; });
+      }
+    }, [stage]);
+    return btn;
+  }
+
+  /* One side of the coin on the big screen: the letter, the word, and whoever
+     has called it. The two sides are the structure of the slide - they sit
+     either side of the coin from the moment it goes up, and the two players
+     attach themselves to whichever one they take. Empty until they do, so the
+     room can see at a glance what is still to be called. */
+  function coinSide(side, c) {
+    var who = callerOn(c, side.key);
+    var landed = c.result;
+    var state = !landed ? (who ? '.claimed' : '')
+              : (landed === side.key ? '.won' : '.lost');
+    return el('div.coin-side' + state, [
+      el('div.coin-side-mark', { text: side.mark }),
+      el('div.coin-side-word', { text: side.word }),
+      who
+        ? el('div.coin-side-who', [av(who.name, 'lg'), el('span.nm', { text: who.name })])
+        : el('div.coin-side-who.unclaimed', { text: 'Nobody yet' }),
+      landed && who
+        ? el('div.job', { text: landed === side.key ? 'Picks the topic' : 'Writes the quiz' })
+        : null
+    ]);
+  }
+
+  function pCoin() {
+    var L = live(), c = L.coin;
+    // Only ever reached with a toss to run, but a stale push must not throw.
+    if (!c) return el('div.slide');
+    var uncalled = c.players.filter(function (p) { return !p.call; }).length;
+    var foot;
+
+    if (c.result) {
+      foot = el('div.coin-out', [
+        el('div.coin-called', { text: sideWord(c.result) }),
+        el('div.coin-verdict', { text: QC.name(c.winnerId) + ' called it, so '
+          + QC.name(c.loserId) + ' writes next Friday\u2019s quiz' })
+      ]);
+    } else {
+      foot = el('div.coin-out.coin-cue', {
+        text: uncalled === 2 ? 'Both of them are calling it on their phones'
+            : uncalled === 1 ? 'One of them still has to call it'
+            : 'Tap the coin'
+      });
+    }
+
+    return el('div.slide.coin-slide', [
+      el('div.s-kicker', { text: 'Level at the bottom' }),
+      el('h1.s-title', { text: c.result ? 'That settles it' : 'Call it' }),
+      el('p.s-sub', { text: c.players.map(function (p) { return p.name; }).join(' and ')
+        + ' finished dead level. The coin decides which of them writes next Friday\u2019s quiz.' }),
+      el('div.coin-row', [
+        coinSide(SIDES[0], c),
+        // Pressable only while it is still in play; afterwards it is a picture.
+        coinPiece(c, true, !c.result),
+        coinSide(SIDES[1], c)
+      ]),
+      foot
+    ]);
+  }
+
+  function plCoin() {
+    var L = live(), c = L.coin, me = QC.state.me;
+    if (!c) return waitCard('Level at the bottom', 'Look at the big screen.');
+    var mine = c.players.filter(function (p) { return p.userId === me; })[0];
+    var them = c.players.filter(function (p) { return p.userId !== me; })[0];
+    var head = function (t) {
+      return el('div.play-head', [el('span.play-step', { text: 'Level at the bottom' })]);
+    };
+
+    // Everyone else is watching, so they get the big screen's story, quietly.
+    if (!mine) {
+      return el('div.play.play-coin', [
+        head(),
+        el('h2.play-q', { text: c.result ? 'That settles it' : 'They are calling it' }),
+        el('p.muted', { style: { marginTop: '10px' }, text: c.result
+          ? QC.name(c.winnerId) + ' called ' + sideWord(c.result).toLowerCase()
+            + ', so ' + QC.name(c.loserId) + ' writes next Friday\u2019s quiz.'
+          : c.players.map(function (p) { return p.name; }).join(' and ')
+            + ' finished level, so a coin decides who writes next Friday\u2019s quiz.' }),
+        coinPiece(c, false, false)
+      ]);
+    }
+
+    if (c.result) {
+      var won = c.winnerId === me;
+      return el('div.play.play-coin', [
+        head(),
+        el('h2.play-q', { text: won ? 'You called it' : 'Not your day' }),
+        coinPiece(c, false, false),
+        el('div.coin-out', [
+          el('div.coin-called', { text: sideWord(c.result) }),
+          el('div.coin-verdict', { text: won
+            ? 'You pick next Friday\u2019s topic'
+            : 'You are writing next Friday\u2019s quiz' })
+        ])
+      ]);
+    }
+
+    // Still to be called, or called and waiting on the flip.
+    var taken = them && them.call;
+    return el('div.play.play-coin', [
+      head(),
+      el('h2.play-q', { text: mine.call
+        ? 'You called ' + sideWord(mine.call).toLowerCase()
+        : 'Call it' }),
+      el('p.muted', { style: { marginTop: '10px' }, text: mine.call
+        ? 'Now ' + QC.name(L.quizMasterId) + ' flips it. Watch the big screen.'
+        : 'You and ' + (them ? them.name : 'someone else') + ' finished dead level. '
+          + 'Call it right and you pick next Friday\u2019s topic; the other one writes '
+          + 'the quiz.' }),
+      el('div.call-row', SIDES.map(function (side) {
+        var isMine = mine.call === side.key;
+        var gone = !isMine && taken === side.key;
+        var btn = el('button.call-opt' + (isMine ? '.picked' : '') + (gone ? '.gone' : ''), {
+          type: 'button',
+          disabled: !!mine.call || gone,
+          onclick: function () {
+            btn.disabled = true;
+            QC.net.callIt(side.key).catch(function (e) { QC.toast(e.message); btn.disabled = false; });
+          }
+        }, [
+          el('span.mark', { text: side.mark }),
+          el('span.t', { text: side.word }),
+          el('span.by', { text: gone ? them.name.split(/\s+/)[0] + ' has it' : (isMine ? 'Yours' : '') })
+        ]);
+        return btn;
+      }))
+    ]);
+  }
+
   /* PRESENTER: the big screen */
 
   /* Every answer a player sends pushes new state, which redraws this view. The
@@ -215,6 +418,7 @@
       case 'gap':   body = pGap(); break;
       case 'a':     body = pQuestion(true); break;
       case 'tba':   body = pTie(true); break;
+      case 'coin':  body = pCoin(); break;
       case 'board': body = pBoard(); break;
       case 'roles': body = pRoles(); break;
       default:      body = el('div.slide');
@@ -306,7 +510,7 @@
     var L = live(), s = QC.state;
     var topic = L.topic || (s.upcoming && s.upcoming.topic) || '';
     return el('div.slide.topic-slide', [
-      el('div.s-kicker', { text: 'Tonight’s topic' }),
+      el('div.s-kicker', { text: 'Today’s topic' }),
       el('h1.s-title', { text: topic || 'Anything goes' }),
       el('p.s-sub', { text: L.questionCount + ' questions and a tiebreaker' })
     ]);
@@ -381,7 +585,7 @@
             el('span.i', { html: QC.infoIcon, 'aria-hidden': 'true' }),
             el('span.t', { text: q.note })
           ]) : null)
-        : answerTally(L)
+        : tallyBox('answers')
     ]);
   }
 
@@ -389,15 +593,36 @@
      Cleared whenever a slide is drawn, so a stale one is never written to. */
   var tally = null;
 
-  function answerTally(L) {
-    var done = L.answeredCount, total = L.playerCount;
-    var allIn = total > 0 && done === total;
-    var fill = el('i', { style: { width: (total ? (done / total) * 100 : 0) + '%' } });
-    var text = el('div.tally-text', { text: allIn ? 'Everyone has answered' : done + ' of ' + total + ' answered' });
-    var box = el('div.tally' + (allIn ? '.all-in' : ''), [el('div.tally-bar', [fill]), text]);
-    tally = { box: box, fill: fill, text: text, kind: 'answers' };
+  /* "7 of 9 answered", with a bar. Built once per slide and then written to in
+     place by patchCounts - the numbers are the only thing that moves while a
+     question is up, and rebuilding the slide for them restarts whatever clip
+     the quiz master has playing on it. */
+  function tallyBox(kind) {
+    var fill = el('i');
+    var text = el('div.tally-text');
+    var box = el('div.tally', [el('div.tally-bar', [fill]), text]);
+    tally = { box: box, fill: fill, text: text, kind: kind };
+    writeCounts();
     return box;
   }
+
+  function writeCounts() {
+    var L = live(), tie = tally.kind === 'tie';
+    var done = tie ? L.tieCount : L.answeredCount, total = L.playerCount;
+    var allIn = total > 0 && done === total;
+    var verb = tie ? 'guessed' : 'answered';
+    tally.fill.style.width = (total ? (done / total) * 100 : 0) + '%';
+    tally.text.textContent = allIn ? 'Everyone has ' + verb : done + ' of ' + total + ' ' + verb;
+    tally.box.classList.toggle('all-in', allIn);
+  }
+
+  /* net.js calls this instead of redrawing when somebody else's answer lands.
+     False means there is no counter on screen after all, so a redraw it is. */
+  Live.patchCounts = function () {
+    if (!tally || !tally.box.isConnected) return false;
+    writeCounts();
+    return true;
+  };
 
   function pTie(reveal) {
     var tb = quiz().tieBreaker, L = live();
@@ -419,14 +644,7 @@
           ])
         : el('div', [
             el('p.s-sub', { text: 'Everyone type in a number. It only matters if two people finish level.' }),
-            (function () {
-              var allIn = L.tieCount === L.playerCount && L.playerCount;
-              var fill = el('i', { style: { width: (L.playerCount ? (L.tieCount / L.playerCount) * 100 : 0) + '%' } });
-              var text = el('div.tally-text', { text: L.tieCount + ' of ' + L.playerCount + ' guessed' });
-              var box = el('div.tally' + (allIn ? '.all-in' : ''), [el('div.tally-bar', [fill]), text]);
-              tally = { box: box, fill: fill, text: text, kind: 'tie' };
-              return box;
-            })()
+            tallyBox('tie')
           ])
     ]);
   }
@@ -522,7 +740,8 @@
     else if (L.phase === 'q') label = each ? 'Show the answer' : (last ? 'Tiebreaker' : 'Next');
     else if (L.phase === 'a' && each) label = last ? 'Tiebreaker' : 'Next question';
     else if (L.phase === 'tb') label = each ? 'Show the answer' : 'Show the answers';
-    else if (L.phase === 'tba') label = 'Show the scores';
+    else if (L.phase === 'tba') label = L.coin ? 'Settle the tie' : 'Show the scores';
+    else if (L.phase === 'coin') label = 'Show the scores';
     else if (L.phase === 'board') label = 'Next week';
 
     var step = stepNumber(L);
@@ -549,6 +768,10 @@
   function stepNumber(L) {
     var qc = L.questionCount;
     var n = 1;
+    // The coin slide only exists when two people finish level, and we only
+    // learn that at the tiebreaker answer - so the total grows late. It is the
+    // last slide but two, where a step's worth of bar is not worth chasing.
+    var c = L.coin ? 1 : 0;
 
     // Question and answer alternate, so there is no separate gap slide.
     // Question and answer alternate, so there is no separate gap slide.
@@ -559,9 +782,10 @@
       else if (L.phase === 'a') n = 4 + 2 * L.index;
       else if (L.phase === 'tb') n = 2 * qc + 3;
       else if (L.phase === 'tba') n = 2 * qc + 4;
-      else if (L.phase === 'board') n = 2 * qc + 5;
-      else if (L.phase === 'roles') n = 2 * qc + 6;
-      return { text: n + ' / ' + total, pct: (n / total) * 100 };
+      else if (L.phase === 'coin') n = 2 * qc + 5;
+      else if (L.phase === 'board') n = 2 * qc + 5 + c;
+      else if (L.phase === 'roles') n = 2 * qc + 6 + c;
+      return { text: n + ' / ' + (total + c), pct: (n / (total + c)) * 100 };
     }
 
     var totalEnd = 2 * qc + 7;
@@ -571,9 +795,10 @@
     else if (L.phase === 'gap') n = qc + 4;
     else if (L.phase === 'a') n = qc + 5 + L.index;
     else if (L.phase === 'tba') n = 2 * qc + 5;
-    else if (L.phase === 'board') n = 2 * qc + 6;
-    else if (L.phase === 'roles') n = 2 * qc + 7;
-    return { text: n + ' / ' + totalEnd, pct: (n / totalEnd) * 100 };
+    else if (L.phase === 'coin') n = 2 * qc + 6;
+    else if (L.phase === 'board') n = 2 * qc + 6 + c;
+    else if (L.phase === 'roles') n = 2 * qc + 7 + c;
+    return { text: n + ' / ' + (totalEnd + c), pct: (n / (totalEnd + c)) * 100 };
   }
 
   /* PLAYER: whatever they are holding */
@@ -589,6 +814,7 @@
       case 'gap':   return waitCard('Here come the answers', 'Look at the big screen.');
       case 'a':     return plAnswer();
       case 'tba':   return plTieAnswer();
+      case 'coin':  return plCoin();
       case 'board': return plBoard();
       case 'roles': return plRoles();
     }
@@ -610,7 +836,7 @@
     // Nothing to do on this screen, so it sits in the middle rather than
     // starting at the top like a question does.
     return el('div.play.play-topic', [
-      el('div.play-step', { text: 'Tonight’s topic' }),
+      el('div.play-step', { text: 'Today’s topic' }),
       el('h2.play-topic-t', { text: L.topic || 'Anything goes' }),
       el('p.muted', { text: L.questionCount + ' questions and a tiebreaker' })
     ]);
@@ -621,6 +847,13 @@
     var mine = L.myAnswers[L.index];
     var opts = filledOptions(q);
     var shape = optionShape(opts, q.optionLayout);
+    /* The quiz maker has stepped back. The question stays on screen so it can
+       be talked through, but it is not open again: marked already means nobody
+       may touch it, and merely moved on means whoever answered is locked to
+       what they said. Someone who never answered can still catch up. */
+    var marked = L.index <= (L.shown === undefined ? -1 : L.shown);
+    var movedOn = L.index < (L.asked === undefined ? -1 : L.asked);
+    var closed = marked || (movedOn && mine !== undefined);
 
     return el('div.play', [
       el('div.play-head', [
@@ -631,8 +864,10 @@
       el('h2.play-q' + (questionShape(q.text) ? '.' + questionShape(q.text) : ''), { text: q.text }),
       phoneMedia(q.media),
       el('div.play-opts.opts-' + shape, opts.map(function (o) {
-        return el('button.play-opt' + (mine === o.i ? '.picked' : ''), {
+        return el('button.play-opt' + (mine === o.i ? '.picked' : '')
+                  + (closed && mine !== o.i ? '.faded' : ''), {
           type: 'button',
+          disabled: closed,
           onclick: function () {
             QC.net.answer(o.i).catch(function (e) { QC.toast(e.message); });
           }
@@ -643,9 +878,15 @@
           mine === o.i ? el('span.tick', { text: '✓' }) : null
         ]);
       })),
-      el('p.play-foot', { text: mine === undefined
-        ? 'Tap your answer.'
-        : 'You can change it until the next question comes up.' })
+      el('p.play-foot', { text: marked
+        ? 'This one has already been marked, so it is closed.'
+        : closed
+          ? 'The quiz has moved on from this one - your answer is the one that stands.'
+          : movedOn
+            ? 'You never answered this one. You can still put something down.'
+            : mine === undefined
+              ? 'Tap your answer.'
+              : 'You can change it until the next question comes up.' })
     ]);
   }
 

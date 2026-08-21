@@ -423,6 +423,47 @@ test('holding answers to the end shows no score until the reveal', async () => {
   await call('/api/live/stop', { method: 'POST', as: 'ali' });
 });
 
+/* The score used to jump straight to its final value the moment the answer
+   slides began - so a player looking at answer one already knew how the whole
+   night had gone. It has to climb with the reveal, the same as 'each' mode. */
+test('holding answers to the end still counts them one at a time', async () => {
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+  await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });  // right
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });                      // q1
+  await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'bea' });  // wrong
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });                      // q2
+  await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });  // right
+
+  await advanceTo('gap');
+  const gap = await stateAs('bea');
+  assert.deepEqual(gap.live.myScore, { right: 0, of: 0 },
+    'the answers are coming, but none of them has been shown yet');
+  assert.ok(gap.upcoming.quiz.questions.every((q) => q.correct === undefined),
+    'and none of them is on the wire either');
+
+  const marks = [];
+  for (let i = 0; i < 3; i++) {
+    await call('/api/live/advance', { method: 'POST', as: 'ali' });      // a0, a1, a2
+    marks.push((await stateAs('bea')).live.myScore);
+  }
+  assert.deepEqual(marks, [
+    { right: 1, of: 1 },
+    { right: 1, of: 2 },
+    { right: 2, of: 3 }
+  ], 'one more marked with every answer slide');
+
+  const midway = await stateAs('bea');
+  assert.equal(midway.live.index, 2);
+  await call('/api/live/back', { method: 'POST', as: 'ali' });           // back to a1
+  const back = await stateAs('bea');
+  assert.deepEqual(back.live.myScore, { right: 1, of: 2 }, 'and it counts back down too');
+  assert.equal(back.upcoming.quiz.questions[2].correct, undefined,
+    'the answer that is no longer on screen goes back off the wire');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});
+
 /* The tiebreaker settles a tie, so a second go after watching the counter
    climb would be a second bite at it. */
 test('the tiebreaker takes one guess each', async () => {
@@ -969,6 +1010,249 @@ test('picture size and answer layout are saved and sent on', async () => {
   assert.equal(qs[0].optionLayout, 'row');
   assert.equal(qs[1].mediaSize, 'fit', 'nonsense falls back to the default');
   assert.equal(qs[1].optionLayout, 'auto');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});
+
+
+/* Stepping back to a question is a kindness when somebody missed it, and a
+   loophole once its answer has been on the board. Both go through the same
+   Back button, so the difference has to live in what may still be answered. */
+test('going back reopens a question, unless it has already been marked', async () => {
+  const state = await stateAs('ali');
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Second chances',
+      questions: [
+        { id: 'q1', text: 'One?', options: ['a', 'b'], correct: 0 },
+        { id: 'q2', text: 'Two?', options: ['a', 'b'], correct: 0 }
+      ],
+      tieBreaker: { text: 'n?', unit: '', answer: 10 } } }
+  });
+  await call('/api/live/reveal', { method: 'POST', body: { mode: 'each' }, as: 'ali' });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+
+  await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'bea' });   // wrong
+
+  // Nobody has been marked yet, so a step back is just another look at it.
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });   // q0 -> a0
+  await call('/api/live/back', { method: 'POST', as: 'ali' });      // a0 -> q0, answer seen
+
+  const late = await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });
+  assert.equal(late.status, 409, 'no second go once the answer has been shown');
+  assert.match(late.body.error, /already been shown/);
+
+  const held = await stateAs('bea');
+  assert.equal(held.live.myAnswers[0], 1, 'the answer given at the time is the one that stands');
+  assert.equal(held.live.shown, 0, 'and the phone is told the question is closed');
+
+  // The question the room has not been marked on is still open, though.
+  await advanceTo('q', 'ali');
+  const s2 = await stateAs('ali');
+  assert.equal(s2.live.index, 0, 'still on the first question');
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });   // -> a0
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });   // -> q1
+  const open = await stateAs('bea');
+  assert.equal(open.live.index, 1);
+  assert.ok(open.live.index > open.live.shown, 'question two has not been marked');
+  assert.equal((await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' })).status,
+    200, 'so it takes answers as normal');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+  await call('/api/live/reveal', { method: 'POST', body: { mode: 'end' }, as: 'ali' });
+});
+
+/* Holding the answers to the end means nothing has been revealed during the
+   question run, so the shown-answer wall never fires there. Stepping back
+   still has to close the question, or it can be revised at leisure while the
+   quiz maker re-reads it to the room. */
+test('holding answers to the end still closes a question once it is past', async () => {
+  const state = await stateAs('ali');
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'No going back',
+      questions: [
+        { id: 'q1', text: 'One?', options: ['a', 'b'], correct: 0 },
+        { id: 'q2', text: 'Two?', options: ['a', 'b'], correct: 0 }
+      ],
+      tieBreaker: { text: 'n?', unit: '', answer: 10 } } }
+  });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+
+  await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'bea' });   // committed
+  // Newcomer misses it entirely.
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });                       // q0 -> q1
+  await call('/api/live/back', { method: 'POST', as: 'ali' });                          // back to q0
+
+  const seen = await stateAs('bea');
+  assert.equal(seen.live.index, 0, 'back on the first question');
+  assert.equal(seen.live.shown, -1, 'with nothing revealed - this is end mode');
+  assert.equal(seen.live.asked, 1, 'but the quiz has been past it');
+
+  const rethink = await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });
+  assert.equal(rethink.status, 409, 'no revising it now');
+  assert.match(rethink.body.error, /moved on/);
+  assert.equal((await stateAs('bea')).live.myAnswers[0], 1, 'the answer given at the time stands');
+
+  // Whoever never answered can still catch up - usually why the quiz maker went back.
+  const catchUp = await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'newbie' });
+  assert.equal(catchUp.status, 200, 'a first answer is still allowed');
+  assert.equal((await stateAs('newbie')).live.myAnswers[0], 0);
+
+  // And having caught up, they are locked to it like everyone else.
+  assert.equal((await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'newbie' })).status,
+    409, 'one go each, once the quiz has moved on');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});
+
+/* The wooden spoon writes next Friday's quiz and whoever finished just above
+   them picks the topic. When those two finish level - same score, and the same
+   distance out on the tiebreaker - nothing is left to say which of them takes
+   which job, and the old answer settled it alphabetically and settled it that
+   way every time. So they call it, and the quiz maker flips a coin. */
+test('a level bottom two call a coin for next week\u2019s jobs', async () => {
+  // Ali runs it, so does not rank. Bea and Newcomer play, both members: a
+  // guest never inherits the quiz, so a guest is never in the toss either.
+  const before = await stateAs('ali');
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: before.me }, as: 'ali' });
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Level',
+      questions: [{ id: 'q1', text: '?', options: ['a', 'b'], correct: 0 }],
+      tieBreaker: { text: 'n?', unit: '', answer: 10 } } }
+  });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+
+  // Both wrong, then both exactly as far out on the tiebreaker: dead level.
+  for (const who of ['bea', 'newbie']) {
+    await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: who });
+  }
+  await advanceTo('tb');
+  await call('/api/live/tiebreak', { method: 'POST', body: { value: 7 }, as: 'bea' });
+  await call('/api/live/tiebreak', { method: 'POST', body: { value: 13 }, as: 'newbie' });
+
+  const waiting = await advanceTo('tba');
+  assert.ok(waiting.live.coin, 'the quiz maker is told a coin is coming');
+  assert.equal(waiting.live.coin.result, null, 'and nothing is decided yet');
+  assert.deepEqual(waiting.live.coin.players.map((p) => p.name).sort(), ['Bea', 'Newcomer'],
+    'between the two who finished level');
+
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  assert.equal((await stateAs('ali')).live.phase, 'coin', 'a slide of its own, before the scores');
+
+  // It is theirs to call and nobody else's - not even the quiz maker's.
+  const meddle = await call('/api/live/call', { method: 'POST', body: { side: 'heads' }, as: 'ali' });
+  assert.equal(meddle.status, 403, 'the quiz maker holds every other control, but not this one');
+
+  assert.equal((await call('/api/live/call', { method: 'POST', body: { side: 'sideways' }, as: 'bea' })).status,
+    400, 'heads or tails, nothing else');
+  assert.equal((await call('/api/live/call', { method: 'POST', body: { side: 'heads' }, as: 'bea' })).status, 200);
+  assert.equal((await call('/api/live/call', { method: 'POST', body: { side: 'heads' }, as: 'newbie' })).status,
+    409, 'one side each, and Bea called that one');
+  assert.equal((await call('/api/live/call', { method: 'POST', body: { side: 'tails' }, as: 'newbie' })).status, 200);
+
+  // Un-flipped it cannot be walked past: it decides who writes the quiz.
+  const early = await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  assert.equal(early.status, 409, 'the coin has to land first');
+
+  const theirs = await call('/api/live/flip', { method: 'POST', as: 'bea' });
+  assert.equal(theirs.status, 403, 'and only the quiz maker flips it');
+
+  const flip = await call('/api/live/flip', { method: 'POST', as: 'ali' });
+  assert.equal(flip.status, 200);
+  assert.ok(['heads', 'tails'].includes(flip.body.result));
+
+  const landed = (await stateAs('bea')).live.coin;
+  assert.equal(landed.result, flip.body.result, 'the same result on every screen');
+  const called = landed.players.find((p) => p.call === landed.result);
+  assert.equal(landed.winnerId, called.userId, 'whoever called it right wins');
+  assert.notEqual(landed.loserId, landed.winnerId);
+
+  // Pressing it again is the first press, not a second roll.
+  await call('/api/live/flip', { method: 'POST', as: 'ali' });
+  assert.equal((await stateAs('ali')).live.coin.result, flip.body.result, 'it does not land twice');
+
+  const board = await advanceTo('board');
+  const places = board.live.ranking.map((r) => r.userId);
+  assert.equal(places[places.length - 1], landed.loserId, 'the loser takes the wooden spoon');
+
+  await call('/api/live/finish', { method: 'POST', as: 'ali' });
+  const after = await stateAs('ali');
+  assert.equal(after.upcoming.quizMasterId, landed.loserId, 'and writes next week\u2019s quiz');
+  assert.equal(after.upcoming.topicPickerId, landed.winnerId, 'while the winner picks the topic');
+  assert.match(after.upcoming.reason.master, /toss/, 'and the rota says why');
+});
+
+/* One of them wandering off must not strand the quiz maker on a slide that
+   cannot be walked past. The call that was made stands, and the side nobody
+   took goes to the one who never called. */
+test('a coin still lands when only one of them called it', async () => {
+  const state = await stateAs('ali');
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Absent',
+      questions: [{ id: 'q1', text: '?', options: ['a', 'b'], correct: 0 }],
+      tieBreaker: { text: 'n?', unit: '', answer: 10 } } }
+  });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+  for (const who of ['bea', 'newbie']) {
+    await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: who });
+  }
+  await advanceTo('tb');
+  await call('/api/live/tiebreak', { method: 'POST', body: { value: 7 }, as: 'bea' });
+  await call('/api/live/tiebreak', { method: 'POST', body: { value: 13 }, as: 'newbie' });
+  await advanceTo('coin');
+
+  // Only Bea calls. Newcomer has put their phone in their pocket.
+  await call('/api/live/call', { method: 'POST', body: { side: 'tails' }, as: 'bea' });
+  const flip = await call('/api/live/flip', { method: 'POST', as: 'ali' });
+  assert.equal(flip.status, 200, 'it lands anyway');
+
+  const landed = (await stateAs('ali')).live.coin;
+  assert.equal(landed.players.find((p) => p.name === 'Bea').call, 'tails', 'the call made stands');
+  assert.equal(landed.players.find((p) => p.name === 'Newcomer').call, 'heads',
+    'and the side nobody took goes to the one who never called');
+  assert.ok(landed.winnerId && landed.loserId, 'so it still separates them');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});
+
+/* The coin exists to hand out those two jobs. Level anywhere else in the table
+   decides nothing, so there is nothing to toss for. */
+test('a tie further up the table is not tossed for', async () => {
+  const state = await stateAs('ali');
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Top-heavy',
+      questions: [{ id: 'q1', text: '?', options: ['a', 'b'], correct: 0 }],
+      tieBreaker: { text: 'n?', unit: '', answer: 10 } } }
+  });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+
+  // Bea and Newcomer level in first; Spare alone at the bottom.
+  await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });
+  await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'newbie' });
+  await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'spare' });
+  await advanceTo('tb');
+  await call('/api/live/tiebreak', { method: 'POST', body: { value: 7 }, as: 'bea' });
+  await call('/api/live/tiebreak', { method: 'POST', body: { value: 13 }, as: 'newbie' });
+  await call('/api/live/tiebreak', { method: 'POST', body: { value: 10 }, as: 'spare' });
+
+  const seen = await advanceTo('tba');
+  assert.equal(seen.live.coin, null, 'level in first and second settles nothing');
+
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  assert.equal((await stateAs('ali')).live.phase, 'board', 'so the coin slide never appears');
 
   await call('/api/live/stop', { method: 'POST', as: 'ali' });
 });

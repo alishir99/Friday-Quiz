@@ -1668,3 +1668,220 @@ audio.media-player { height: 44px; }
 .slide.has-media .s-media.size-fill ~ .s-opts { margin-top: clamp(10px, 1.4vh, 18px); }
 /* Filling the slide means the question gets out of the way too. */
 .slide.has-media .s-media.size-fill { margin-top: clamp(10px, 1.4vh, 18px); }
+
+/* THE TOSS: settling the tie at the bottom in front of the room.
+
+   One object on the table and one press. The two who finished level call it on
+   their phones, the quiz maker flips it on the big screen, and the loser walks
+   away with next Friday's quiz to write. */
+.coin-row {
+  display: flex; align-items: flex-start; justify-content: center;
+  gap: clamp(20px, 5vw, 76px);
+  margin: clamp(18px, 4vh, 48px) 0 clamp(14px, 2.5vh, 32px);
+  flex-wrap: wrap;
+}
+/* The two sides, either side of the coin. Quiet until somebody takes one:
+   an unclaimed side is an option, a claimed one is a person, and after the
+   flip the bright one is the side that came up. */
+.coin-side {
+  flex: 0 1 clamp(150px, 20vw, 260px);
+  text-align: center; padding: clamp(14px, 1.8vh, 24px) 12px;
+  border: 2px solid var(--line-soft); border-radius: var(--r-lg);
+  opacity: .5; transition: opacity .35s var(--ease), border-color .35s var(--ease);
+}
+.coin-side.claimed { opacity: .95; border-color: var(--line); }
+.coin-side.won { opacity: 1; border-color: var(--good); background: var(--good-soft); }
+.coin-side.lost { opacity: .45; }
+.coin-side-mark {
+  font-size: clamp(38px, 5vw, 76px); font-weight: 700;
+  line-height: 1; letter-spacing: -.03em;
+}
+.coin-side-word {
+  margin-top: 6px; font-size: clamp(13px, 1.2vw, 18px); font-weight: 650;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2);
+}
+.coin-side-who {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  margin-top: clamp(12px, 1.8vh, 22px);
+}
+.coin-side-who .nm {
+  font-size: clamp(15px, 1.6vw, 24px); font-weight: 600; letter-spacing: -.015em;
+}
+/* Not called yet. `.empty` is already an app-wide empty state carrying a
+   dashed border, so this needs a name of its own. Held at the height of an
+   avatar and a name, so the sides do not jump about as the calls come in. */
+.coin-side-who.unclaimed {
+  display: block; color: var(--ink-3);
+  font-size: clamp(13px, 1.3vw, 19px);
+  padding-top: calc(clamp(44px, 4.4vw, 66px) + 8px);
+}
+.coin-side .job {
+  margin-top: 12px; font-size: clamp(12px, 1.1vw, 16px);
+  font-weight: 650; letter-spacing: .04em; text-transform: uppercase;
+}
+.coin-side.won .job { color: var(--good); }
+.coin-side.lost .job { color: var(--warn); }
+.coin-side.won, .coin-side.lost { animation: coinLand .5s var(--ease-out) 2.35s both; }
+
+/* No auto margin here: inside the presenter's flex row an auto margin absorbs
+   the free space and shoves the two players out to the screen edges. The phone
+   centres it on its own, below. */
+.coin-stage {
+  --coin: 104px;
+  width: var(--coin);
+  perspective: 900px;
+}
+.coin-stage.big { --coin: clamp(118px, 15vw, 200px); }
+.coin-stage.flipping { animation: coinToss 2.4s cubic-bezier(.12,.72,.2,1) both; }
+
+.coin {
+  width: var(--coin); height: var(--coin);
+  position: relative; transform-style: preserve-3d;
+}
+/* At rest it simply sits the way it landed; only a fresh result spins. */
+.coin-stage.tails .coin { transform: rotateX(180deg); }
+.coin-stage.flipping .coin { animation: coinSpin 2.4s cubic-bezier(.12,.72,.2,1) both; }
+.coin-stage.flipping.tails .coin { animation-name: coinSpinTails; }
+
+/* Struck metal rather than a flat disc: this is the one place in the app
+   allowed to look like an object, because it is standing in for one.
+
+   Three layers, outside in. The element itself is the milled edge - the fine
+   ridges a mint knurls into the rim so a shaved coin can be spotted - drawn as
+   a repeating conic gradient, which is the one gradient that runs *around* a
+   circle instead of across it. ::before is the struck field inside the rim,
+   where a plain linear ramp is the giveaway: real metal does not fade evenly
+   from light to dark, it bands, because a turned surface catches the light
+   several times round. So the field is a conic gradient too, with its own
+   bright quarters, and a soft radial highlight sat over the top for the one
+   light actually in the room. The bevel between rim and field is the pair of
+   inset shadows: lit along the top lip, shaded along the bottom. */
+.coin-face {
+  position: absolute; inset: 0; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  backface-visibility: hidden;
+  background: repeating-conic-gradient(from 0deg,
+    #8a6a18 0deg 1.15deg, #f0d685 1.15deg 2.3deg);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, .32), 0 2px 5px rgba(0, 0, 0, .3);
+}
+.coin-face::before {
+  content: ''; position: absolute; inset: 7%; border-radius: 50%;
+  background:
+    radial-gradient(115% 115% at 30% 22%, rgba(255, 255, 255, .8), rgba(255, 255, 255, 0) 48%),
+    conic-gradient(from 205deg,
+      #b9861a 0deg, #f7e6ac 52deg, #cd9c28 104deg, #8d640f 156deg,
+      #dcb244 208deg, #fdf2c8 258deg, #c08f1d 312deg, #b9861a 360deg);
+  box-shadow:
+    /* the rim's inner lip, lit above and shaded below */
+    inset 0 calc(var(--coin) * .022) calc(var(--coin) * .04) rgba(255, 252, 232, .6),
+    inset 0 calc(var(--coin) * -.03) calc(var(--coin) * .055) rgba(84, 55, 4, .6),
+    /* and the engraved circle a coin carries inside its rim */
+    inset 0 0 0 calc(var(--coin) * .014) rgba(96, 66, 8, .38);
+}
+/* Incuse rather than raised: struck *into* the field, which is both what most
+   mints do with a legend and what keeps it readable from the back of a room -
+   dark on gold, lit along the lower edge of the cut. */
+.coin-mark, .coin-legend {
+  position: relative; color: #4a3708;
+  text-shadow:
+    0 calc(var(--coin) * .008) 0 rgba(255, 247, 214, .7),
+    0 calc(var(--coin) * -.006) calc(var(--coin) * .008) rgba(58, 37, 0, .45);
+}
+.coin-mark {
+  font-size: calc(var(--coin) * .34); font-weight: 700;
+  letter-spacing: -.01em; line-height: 1;
+}
+/* The legend a coin carries under its device: who is riding on this face. */
+.coin-legend {
+  margin-top: calc(var(--coin) * .04);
+  max-width: 68%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: calc(var(--coin) * .095); font-weight: 650;
+  letter-spacing: .12em; text-transform: uppercase; opacity: .8;
+}
+.coin-face.tails { transform: rotateX(180deg); }
+
+@keyframes coinSpin      { from { transform: rotateX(0) }   to { transform: rotateX(1800deg) } }
+@keyframes coinSpinTails { from { transform: rotateX(0) }   to { transform: rotateX(1980deg) } }
+@keyframes coinToss {
+  0%   { transform: translateY(0) }
+  30%  { transform: translateY(calc(var(--coin) * -.5)) }
+  100% { transform: translateY(0) }
+}
+
+/* The quiz maker's press. A bare button around the coin - the coin is the
+   affordance, so the button must add nothing but a focus ring and the nudge
+   that says it can be picked up. */
+.coin-flip {
+  padding: 0; border: 0; background: none; border-radius: 50%;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform .2s var(--ease-out);
+}
+.coin-flip:hover { transform: translateY(-4px); }
+.coin-flip:active { transform: translateY(-1px) scale(.97); }
+.coin-flip:focus-visible { outline: 3px solid var(--accent); outline-offset: 8px; }
+.coin-flip:disabled { cursor: default; }
+
+/* The result waits for the coin to stop. Text, not colour alone. */
+.coin-out { text-align: center; }
+.coin-called {
+  font-size: clamp(22px, 3vw, 46px); font-weight: 700; letter-spacing: -.02em;
+  animation: coinLand .5s var(--ease-out) 2.35s both;
+}
+.coin-verdict {
+  margin-top: 6px; color: var(--ink-2);
+  font-size: clamp(15px, 1.6vw, 24px); font-weight: 500;
+  animation: coinLand .5s var(--ease-out) 2.5s both;
+}
+/* Before the flip this is a prompt, not a verdict, so it stays quiet. */
+.coin-out.coin-cue {
+  color: var(--ink-2); font-weight: 500;
+  font-size: clamp(15px, 1.7vw, 25px); animation: none;
+}
+@keyframes coinLand { from { opacity: 0; transform: translateY(10px) scale(.96) } }
+
+/* THE CALL: two buttons, on the phones of the two it is between. */
+.call-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px;
+}
+.call-opt {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-height: 128px; padding: 20px 12px;
+  border: 2px solid var(--line); border-radius: var(--r-lg);
+  background: var(--surface-2); color: var(--ink);
+  font: inherit; cursor: pointer;
+  transition: border-color .15s var(--ease), background .15s var(--ease), transform .12s var(--ease-out);
+}
+.call-opt:active { transform: scale(.98); }
+.call-opt .mark { font-size: 40px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+.call-opt .t { font-size: 17px; font-weight: 600; }
+.call-opt .by { font-size: 13px; color: var(--ink-2); min-height: 16px; }
+.call-opt.picked {
+  border-color: var(--accent); background: var(--accent-soft); color: var(--accent);
+}
+.call-opt.picked .by { color: var(--accent); font-weight: 600; }
+/* Taken by the other one: still legible, plainly not yours. */
+.call-opt.gone { opacity: .45; cursor: default; }
+.call-opt:disabled { cursor: default; }
+
+.play-coin .coin-stage { margin: 30px auto 0; }
+.play-coin .coin-out { margin-top: 22px; }
+
+/* A push while the coin is on screen - a phone reconnecting, or the other one
+   calling their side - must not send it round again. It spins on the render
+   that first carries a result, and `.flipping` is only set on that one. */
+.slide.still .coin-stage.flipping,
+.slide.still .coin-stage.flipping .coin,
+.slide.still .coin-called, .slide.still .coin-verdict,
+.slide.still .coin-side.won, .slide.still .coin-side.lost {
+  animation-duration: .01ms; animation-delay: 0s;
+}
+
+/* Asked for less motion: the coin is simply already down, and the result
+   appears rather than waiting on a spin that is not happening. */
+@media (prefers-reduced-motion: reduce) {
+  .coin-stage.flipping, .coin-stage.flipping .coin { animation-duration: .01ms; }
+  .coin-called, .coin-verdict, .coin-side.won, .coin-side.lost {
+    animation-delay: 0s; animation-duration: .2s;
+  }
+  .coin-flip:hover { transform: none; }
+}
