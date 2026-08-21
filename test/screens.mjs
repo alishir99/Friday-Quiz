@@ -85,3 +85,29 @@ test('the screens draw for an ordinary member too', () => {
     assert.doesNotThrow(() => sandbox.QC.screens[name](), name);
   }
 });
+
+/* The tiebreaker takes a number, and a phone spells numbers the way its own
+   locale does. An iOS decimal key is a comma on a great many handsets, and an
+   <input type="number"> reports an empty value for "70,2" rather than the text
+   - so the guess vanished and the field looked fine. Both number fields parse
+   through QC.readNumber now, which is small enough to check outright. */
+test('a number is read however the phone spelled it', () => {
+  const r = sandbox.QC.readNumber;
+  assert.equal(r('70.2'), 70.2, 'a dot, as a desktop types it');
+  assert.equal(r('70,2'), 70.2, 'a comma, as an iOS decimal key gives it');
+  assert.equal(r('328,45'), 328.45, 'two decimal places');
+  assert.equal(r('  40 '), 40, 'whitespace either side');
+  assert.equal(r('-3,5'), -3.5, 'and negatives');
+
+  // Grouped thousands are not decimals, and reading 1,000 as 1 would be worse
+  // than refusing it.
+  assert.equal(r('1,000'), 1000);
+  assert.equal(r('12,345,678'), 12345678);
+
+  // An empty field and a bad one are different things: one is "carry on", the
+  // other is "say so".
+  assert.equal(r(''), null, 'nothing typed');
+  assert.equal(r('   '), null, 'only whitespace');
+  assert.ok(Number.isNaN(r('banana')), 'not a number');
+  assert.ok(Number.isNaN(r('1,2,3')), 'ambiguous rubbish is refused, not guessed at');
+});

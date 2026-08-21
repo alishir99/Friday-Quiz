@@ -1512,12 +1512,21 @@
         return card;
       }
 
+      /* Text, not number: on a phone whose decimal key is a comma, a
+         type="number" field reports an empty value for "328,1" - so the answer
+         silently went null on every keystroke and the quiz would not go ready,
+         with nothing on screen to say why. See QC.readNumber. */
       var num = el('input.input', {
-        type: 'number', step: 'any', placeholder: 'e.g. 563',
+        type: 'text', inputmode: 'decimal', autocomplete: 'off',
+        placeholder: 'e.g. 563',
         value: tb.answer === null || tb.answer === undefined ? '' : tb.answer
       });
       num.addEventListener('input', function () {
-        tb.answer = num.value === '' ? null : Number(num.value);
+        var n = QC.readNumber(num.value);
+        // Mid-typing rubbish ("-", "3.") is left alone rather than wiping the
+        // answer; the readiness check already refuses to start without one.
+        if (n === null) tb.answer = null;
+        else if (!Number.isNaN(n)) tb.answer = n;
         markDirty(); saveSoon();
       });
 

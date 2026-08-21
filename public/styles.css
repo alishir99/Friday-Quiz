@@ -1640,7 +1640,13 @@ audio.media-player { height: 44px; }
 /* The topic on a player's own screen: nothing to do here, so it sits in the
    middle of the screen rather than at the top like a question. */
 .play.play-topic {
-  justify-content: center; align-items: center; text-align: center; gap: 10px;
+  /* `safe` matters: plain centring in a column that can overflow pushes the
+     top of the content above the top edge, where there is no way to scroll to
+     it. Safe centring gives up and aligns to the start instead, so a long
+     topic on a short screen is still readable from the beginning. */
+  justify-content: center;
+  justify-content: safe center;
+  align-items: center; text-align: center; gap: 10px;
 }
 .play-topic-t {
   font-size: clamp(28px, 7vw, 40px); font-weight: 650;
@@ -1649,14 +1655,21 @@ audio.media-player { height: 44px; }
 
 /* Same idea on a player's own screen: short answers pair up two to a row
    instead of four lonely full-width buttons. */
+/* minmax(0, 1fr), not 1fr. A bare `1fr` is `minmax(auto, 1fr)`, and that auto
+   floor is the item's min-content - so one long answer ("Christchurch") drags
+   its column past its share and the row runs off the screen. With overflow-x
+   clipped on the body that does not even scroll: it is simply cut off. */
 .play-opts.opts-tight {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
 }
 .play-opts.opts-tight .play-opt { justify-content: center; }
 .play-opts.opts-tight .play-opt .t { flex: 0 1 auto; }
 .play-opts.opts-pics {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
 }
+/* And a single word longer than its column wraps rather than spilling out of
+   it - the column can now be narrow, so something has to give. */
+.play-opt .t { overflow-wrap: anywhere; }
 .play-q.q-long  { font-size: clamp(20px, 4.8vw, 27px); }
 .play-q.q-xlong { font-size: clamp(18px, 4.2vw, 23px); line-height: 1.25; }
 

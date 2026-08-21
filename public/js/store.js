@@ -26,6 +26,29 @@
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
+  /* A number as a phone's keypad actually spells it.
+
+     iOS gives the decimal key whatever mark the handset's own locale uses, and
+     on a great many of them that mark is a comma - so a European thumb aiming
+     at 70.2 produces "70,2". An <input type="number"> calls that invalid, and
+     what it hands back is not the text with a comma in it: it is the empty
+     string. Both places that take a number are therefore plain text fields
+     with a decimal keypad, and the parsing happens here where both marks are
+     accepted.
+
+     null for nothing typed, NaN for something that is not a number, so a
+     caller can tell an empty field from a bad one. */
+  QC.readNumber = function (raw) {
+    var t = String(raw == null ? '' : raw).trim().replace(/\s/g, '');
+    if (t === '') return null;
+    /* Grouped thousands, unambiguously: 1,000 and 12,345,678. Nobody writes a
+       decimal that way, and reading those as 1 and 12.345 would be worse than
+       refusing them. Any other comma is a decimal point. */
+    t = /^[+-]?\d{1,3}(,\d{3})+$/.test(t) ? t.replace(/,/g, '') : t.replace(',', '.');
+    var n = Number(t);
+    return Number.isFinite(n) ? n : NaN;
+  };
+
   QC.fmtDate = function (iso, opts) {
     if (!iso) return '';
     var d = new Date(iso + (iso.length === 10 ? 'T12:00:00' : ''));

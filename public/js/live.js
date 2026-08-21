@@ -535,6 +535,25 @@
     return 'wide';                              // a phrase or a sentence
   }
 
+  /* The longest answer, in characters. What decides how they are laid out. */
+  function longestOption(opts) {
+    return opts.reduce(function (n, o) {
+      return Math.max(n, String(o.text || '').trim().length);
+    }, 0);
+  }
+
+  /* The same answers, judged against a phone's width instead of a projector's.
+     Two columns on a 390px screen leaves about eight characters once the
+     letter circle and the padding have taken their share - so the twelve that
+     sit happily side by side on the big screen ("Christchurch") run straight
+     off the edge here. The quiz maker's explicit "side by side" still wins;
+     the grid can no longer be forced wider than the screen either way. */
+  function phoneShape(q, opts) {
+    var shape = optionShape(opts, q.optionLayout);
+    if (shape === 'tight' && q.optionLayout !== 'row' && longestOption(opts) > 8) return 'wide';
+    return shape;
+  }
+
   /* How many across. Chosen so the rows come out even - three answers go three
      across rather than two and a stranded one, which is what looked broken. */
   function optionColumns(shape, count) {
@@ -846,7 +865,7 @@
     var L = live(), q = quiz().questions[L.index];
     var mine = L.myAnswers[L.index];
     var opts = filledOptions(q);
-    var shape = optionShape(opts, q.optionLayout);
+    var shape = phoneShape(q, opts);
     /* The quiz maker has stepped back. The question stays on screen so it can
        be talked through, but it is not open again: marked already means nobody
        may touch it, and merely moved on means whoever answered is locked to
@@ -895,8 +914,9 @@
     // One guess only, so a guess already on record locks the whole form.
     var sent = L.myTieGuess !== null;
     var input = el('input.input.play-number', {
-      type: 'number', step: 'any', inputmode: 'decimal',
-      placeholder: 'Your number',
+      // Text, not number: see QC.readNumber for why that loses the guess.
+      type: 'text', inputmode: 'decimal', autocomplete: 'off',
+      enterkeyhint: 'send', placeholder: 'Your number',
       value: sent ? L.myTieGuess : '',
       disabled: sent
     });
@@ -907,12 +927,18 @@
 
     var send = function () {
       if (btn.disabled) return;
-      if (input.value === '') { input.focus(); return; }
+      var guess = QC.readNumber(input.value);
+      if (guess === null) { input.focus(); return; }
+      if (Number.isNaN(guess)) {
+        QC.toast('That is not a number');
+        input.focus();
+        return;
+      }
       // Down before the request goes out, not after it lands - a double tap is
       // faster than a round trip, and that is exactly what we are stopping.
       btn.disabled = true;
       input.disabled = true;
-      QC.net.tiebreak(Number(input.value))
+      QC.net.tiebreak(guess)
         .then(function () { btn.textContent = '✓ Guess sent'; QC.toast('Guess sent'); })
         .catch(function (e) {
           // It never landed, so let them try again.
