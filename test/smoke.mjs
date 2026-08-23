@@ -993,9 +993,12 @@ test('picture size and answer layout are saved and sent on', async () => {
     body: { quiz: { topic: 'Layout',
       questions: [
         { id: 'q1', text: 'A?', options: ['a', 'b'], correct: 0,
-          mediaSize: 'fill', optionLayout: 'row' },
+          mediaSize: 57, optionLayout: 'row' },
         { id: 'q2', text: 'B?', options: ['a', 'b'], correct: 0,
-          mediaSize: 'enormous', optionLayout: 'diagonal' }   // nonsense
+          mediaSize: 'enormous', optionLayout: 'diagonal' },  // nonsense
+        // Written before the size was a number, and must not change shape.
+        { id: 'q3', text: 'C?', options: ['a', 'b'], correct: 0, mediaSize: 'fill' },
+        { id: 'q4', text: 'D?', options: ['a', 'b'], correct: 0, mediaSize: 4000 }
       ],
       tieBreaker: { text: 'n?', unit: '', answer: 1 } } }
   });
@@ -1006,10 +1009,12 @@ test('picture size and answer layout are saved and sent on', async () => {
   const seen = await stateAs('cal');
   const qs = seen.upcoming.quiz.questions;
 
-  assert.equal(qs[0].mediaSize, 'fill', 'a real choice survives');
+  assert.equal(qs[0].mediaSize, 57, 'the size the quiz maker dragged to survives');
   assert.equal(qs[0].optionLayout, 'row');
-  assert.equal(qs[1].mediaSize, 'fit', 'nonsense falls back to the default');
+  assert.equal(qs[1].mediaSize, 42, 'nonsense falls back to the default');
   assert.equal(qs[1].optionLayout, 'auto');
+  assert.equal(qs[2].mediaSize, 86, 'an old "fill" still means what it meant');
+  assert.equal(qs[3].mediaSize, 90, 'and a silly number is clamped, not obeyed');
 
   await call('/api/live/stop', { method: 'POST', as: 'ali' });
 });

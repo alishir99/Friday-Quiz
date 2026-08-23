@@ -770,10 +770,17 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 /* Nothing gives up room it is actually drawing in. A child told it may shrink
    gets a smaller box, but its contents keep their size and spill out over
    whatever comes next - an overlap, not a saving. That is what put the join
-   card on top of the lobby hint. Only the picture can truly shrink, because
-   object-fit lets it draw smaller, so only the picture is allowed to. */
+   card on top of the lobby hint.
+
+   The picture used to be the exception, on the grounds that object-fit lets it
+   draw smaller. It no longer is: its height is now whatever the quiz maker
+   dragged to, and letting the slide claw that back meant everything above
+   about 44vh did nothing at all - the same complaint the three old presets
+   had. A picture big enough to crowd the slide is handled where crowding is
+   already handled: fitSlide() scales the whole slide so all of it stays on
+   screen. Bigger picture, smaller everything else, which is the trade the
+   quiz maker just asked for. */
 .slide > * { min-height: 0; flex-shrink: 0; }
-.slide > .s-media { flex-shrink: 1; }
 /* The question, the answers and the tally keep their content height; only the
    picture is allowed to take what is left. */
 .slide > .s-q, .slide > .s-kicker, .slide > .s-opts, .slide > .tally { flex-grow: 0; }
@@ -1080,7 +1087,7 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .slide.tight .s-answer { margin-top: clamp(16px, 2vh, 28px); padding: clamp(14px,min(1.8vw, 2.7vh),26px) clamp(18px,min(2.2vw, 3.3vh),32px); }
 .slide.tight .s-answer .val { font-size: clamp(22px, min(2.8vw, 4.2vh), 44px); }
 .slide.tight .s-media { flex: 0 1 auto; }
-.slide.tight .s-media img, .slide.tight .s-media video { max-height: 22vh; }
+.slide.tight .s-media img, .slide.tight .s-media video { height: min(var(--pic, 42vh), 22vh); }
 
 .next-grid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(18px,min(2.4vw, 3.6vh),34px);
   margin-top: clamp(28px, 4vh, 56px); }
@@ -1405,15 +1412,36 @@ audio.media-player { height: 44px; }
 .s-media {
   margin-top: clamp(18px, 2.6vh, 34px);
   display: flex; justify-content: center; align-items: center;
-  flex: 1 1 auto; min-height: 0;
+  /* The box wraps the picture rather than being sized itself: give the box the
+     height and a wide picture leaves a tall band of nothing above and below
+     it, because object-fit will not stretch past the slide's width. The
+     picture carries the size, the box carries only the centring. */
+  flex: 0 0 auto; min-height: 0;
 }
 .s-media img, .s-media video {
-  /* width/height 100% rather than auto: an img at height:auto draws at its own
+  /* No background. The element is as wide as the slide and object-fit letter-
+     boxes the picture inside it, so a filled background is painted over every
+     bit of that box the picture does not cover - which is what put the grey
+     slabs down either side of anything not the shape of the screen.
+
+     width/height 100% rather than auto: an img at height:auto draws at its own
      natural size and will not scale UP, so the box grew and the picture stayed
-     small with white space around it. object-fit keeps the proportions. */
-  width: 100%; height: 100%; min-height: 0;
+     small in the middle of it. object-fit keeps the proportions.
+
+     --pic is how tall the quiz maker dragged it. */
+  /* height, not max-height: a picture must scale UP to the size asked for as
+     well as down, and at height:auto it would only ever draw at its own
+     natural size. width:auto keeps the proportions, and max-width stops a
+     wide one running off the side - past that point the slide's width is the
+     limit and no slider can argue with it.
+
+     No background. The element used to be as wide as the slide with the
+     picture letterboxed inside it, so a filled background painted every part
+     of that box the picture did not cover - which is what put the grey slabs
+     down either side of anything that was not the shape of the screen. */
+  height: var(--pic, 42vh);
+  width: auto; max-width: 100%; min-height: 0;
   object-fit: contain; border-radius: var(--r-lg);
-  background: var(--surface-2);
 }
 /* A slide with a picture fills the frame; the auto margins that centre a
    text-only slide would fight the picture for the same space. */
@@ -1430,7 +1458,7 @@ audio.media-player { height: 44px; }
 .slide.has-media .s-q { font-size: clamp(24px, min(3.1vw, 4.65vh), 46px); }
 .slide.has-media .s-opts { margin-top: clamp(16px, 2.2vh, 30px); }
 .slide.has-media .s-opt { padding: clamp(11px, min(1.4vw, 2.1vh), 18px) clamp(16px, min(2vw, 3.0vh), 26px); font-size: clamp(17px, min(1.8vw, 2.7vh), 28px); }
-.slide.has-media .s-media img, .slide.has-media .s-media video { max-height: 34vh; }
+
 
 /* Media on a phone */
 
@@ -1755,8 +1783,9 @@ audio.media-player { height: 44px; }
   .s-answer { margin-top: 14px; padding: 12px 14px; border-radius: 14px; max-width: 100%; }
   .s-answer .val { font-size: 19px; }
   .s-answer .note { margin-top: 9px; padding-top: 9px; font-size: 13px; }
+  /* Never more than a third of a phone, whatever it was set to for the hall. */
   .s-media { flex: 0 1 auto; }
-  .s-media img, .s-media video { max-height: 30vh; }
+  .s-media img, .s-media video { height: min(var(--pic, 42vh), 30vh); }
 
   /* The lobby is the worst offender: a QR sized for a projector, plus the code,
      pushed the Start button off the bottom of the screen. */
@@ -1827,11 +1856,9 @@ audio.media-player { height: 44px; }
 /* How much of the slide a picture takes, when the automatic share is not what
    the quiz master wanted. Still proportions rather than positions, so the slide
    keeps working on a projector and on a phone. */
-.s-media.size-large { flex: 2 1 auto; }
-.s-media.size-fill  { flex: 4 1 auto; }
-.slide.has-media .s-media.size-fill ~ .s-opts { margin-top: clamp(10px, 1.4vh, 18px); }
-/* Filling the slide means the question gets out of the way too. */
-.slide.has-media .s-media.size-fill { margin-top: clamp(10px, 1.4vh, 18px); }
+/* A picture given most of the slide leaves less room around it, so the gaps
+   above and below close up rather than the answers being pushed off. */
+.slide.has-media .s-media { margin-top: clamp(10px, 1.6vh, 26px); }
 
 /* THE TOSS: settling the tie at the bottom in front of the room.
 
@@ -2104,3 +2131,35 @@ html.dark .play-wave-track.back { opacity: .075; }
      still. It just stops sliding. */
   .rib-lane { animation: none; }
 }
+
+/* The picture-size slider in the quiz editor. Same shape as the clip's
+   scrubber, because it is the same gesture. */
+.size-row { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
+.size-read {
+  flex: 0 0 auto; min-width: 48px; text-align: right;
+  font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink-2);
+}
+.size-range {
+  flex: 1 1 auto; min-width: 0; -webkit-appearance: none; appearance: none;
+  height: 22px; margin: 0; background: transparent; cursor: pointer;
+}
+.size-range::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px; background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+.size-range::-moz-range-track {
+  height: 6px; border-radius: 3px; background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+.size-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 20px; height: 20px; margin-top: -8px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .28);
+}
+.size-range::-moz-range-thumb {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); border: 2px solid var(--surface);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .28);
+}
+.size-range:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }

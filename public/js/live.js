@@ -58,18 +58,19 @@
     if (!m) return null;
     var url = QC.mediaUrl(m);
     if (!url) return null;
-    // 'fit' shares the leftover room, 'large' takes more, 'fill' takes it all.
-    var cls = '.s-media.size-' + (size || 'fit');
 
-    if (m.kind === 'image') {
-      return el('div' + cls, [el('img', { src: url, alt: m.name || '' })]);
-    }
-
-    if (m.kind === 'audio') return el('div' + cls + '.audio', [nowPlaying(url)]);
-
-    return el('div' + cls + '.video', [
+    var box;
+    if (m.kind === 'image') box = el('div.s-media', [el('img', { src: url, alt: m.name || '' })]);
+    else if (m.kind === 'audio') box = el('div.s-media.audio', [nowPlaying(url)]);
+    else box = el('div.s-media.video', [
       el('video', { src: url, controls: true, preload: 'auto', playsinline: true })
     ]);
+
+    /* How tall the quiz maker dragged it, in vh. setProperty rather than the
+       style object el() takes: custom properties are invisible to a plain
+       assignment, which fails silently and leaves everything default-sized. */
+    box.style.setProperty('--pic', QC.picSize(size) + 'vh');
+    return box;
   }
 
   /* A playing clip, on the big screen.

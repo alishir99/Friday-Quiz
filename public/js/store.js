@@ -49,6 +49,21 @@
     return Number.isFinite(n) ? n : NaN;
   };
 
+  /* How tall a picture stands on the big screen, as a percentage of the
+     screen's height. It used to be three presets - Fit, Large, Fill - and it
+     was never quite the size anybody wanted, so it is a number the quiz maker
+     drags now. The three old names still read: a quiz written last month must
+     not change shape today. */
+  QC.PIC_MIN = 15;
+  QC.PIC_MAX = 90;
+  var LEGACY_PIC = { fit: 42, large: 62, fill: 86 };
+
+  QC.picSize = function (v) {
+    var n = Number(v);
+    if (isFinite(n) && n > 0) return Math.min(QC.PIC_MAX, Math.max(QC.PIC_MIN, Math.round(n)));
+    return LEGACY_PIC[v] || 42;
+  };
+
   QC.fmtDate = function (iso, opts) {
     if (!iso) return '';
     var d = new Date(iso + (iso.length === 10 ? 'T12:00:00' : ''));

@@ -1251,17 +1251,26 @@
             text: 'Six is the most you can have.' })
         ]),
         /* Only worth showing once there is a picture to size. */
-        q.media ? el('div.field', [
-          el('label', { text: 'Picture size on the big screen' }),
-          el('span.hint', { text: 'How much of the slide it takes. The rest goes to the question and the answers.' }),
-          el('div', { style: { marginTop: '6px' } }, [
-            choice(q, 'mediaSize', 'fit', [
-              ['fit', 'Fit', 'Shares the leftover room'],
-              ['large', 'Large', 'Takes about twice the share'],
-              ['fill', 'Fill', 'Takes as much as the slide allows']
-            ])
-          ])
-        ]) : null,
+        /* Only worth showing once there is a picture to size. Three presets
+           were never the size anybody wanted, so this is a slider. */
+        q.media ? (function () {
+          var val = QC.picSize(q.mediaSize);
+          var read = el('span.size-read', { text: val + '%' });
+          var slider = el('input.size-range', {
+            type: 'range', min: String(QC.PIC_MIN), max: String(QC.PIC_MAX), step: '1',
+            value: String(val), 'aria-label': 'Picture size on the big screen'
+          });
+          slider.addEventListener('input', function () {
+            q.mediaSize = Number(slider.value);
+            read.textContent = slider.value + '%';
+            markDirty(); saveSoon();
+          });
+          return el('div.field', [
+            el('label', { text: 'Picture size on the big screen' }),
+            el('span.hint', { text: 'How much of the slide height it takes. The rest goes to the question and the answers.' }),
+            el('div.size-row', [slider, read])
+          ]);
+        })() : null,
         el('div.field', [
           el('label', { text: 'Extra note  (optional)' }),
           el('span.hint', { text: 'Shown with the answer: a bit of trivia or an explanation.' }),

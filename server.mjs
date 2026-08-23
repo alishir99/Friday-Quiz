@@ -41,7 +41,19 @@ const MIN_OPTIONS = 2;
 /* Overrides for when the automatic layout reads badly. Deliberately a short
    list of shapes rather than free placement: whatever is chosen still has to
    work on a projector and on somebody's phone. */
-const MEDIA_SIZES = ['fit', 'large', 'fill'];
+/* How much of the slide a picture takes, as a percentage of the screen's
+   height. It used to be three presets and they were never the size anybody
+   actually wanted, so it is a number the quiz maker drags now. The old three
+   still read - a quiz written last month must not change shape today. */
+const MEDIA_MIN = 15, MEDIA_MAX = 90, MEDIA_DEFAULT = 42;
+const LEGACY_MEDIA_SIZE = { fit: 42, large: 62, fill: 86 };
+
+function mediaSize(v) {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return Math.min(MEDIA_MAX, Math.max(MEDIA_MIN, Math.round(v)));
+  }
+  return LEGACY_MEDIA_SIZE[v] || MEDIA_DEFAULT;
+}
 const OPTION_LAYOUTS = ['auto', 'row', 'stacked'];
 const MAX_OPTIONS = 6;
 
@@ -438,7 +450,7 @@ function blankQuiz(authorId, topic) {
          quiz already in the history keeps working untouched - they simply
          have no optionMedia and nothing tries to draw one. */
       optionMedia: Array.from({ length: DEFAULT_OPTIONS }, () => null),
-      mediaSize: 'fit', optionLayout: 'auto',
+      mediaSize: MEDIA_DEFAULT, optionLayout: 'auto',
       correct: null, note: '', media: null
     })),
     tieBreaker: { text: '', answer: null, unit: '', note: '', media: null }
@@ -842,7 +854,7 @@ function visibleQuiz(quiz, canSeeAnswers, canSeeTopic, revealed, tieRevealed) {
       id: q.id, text: q.text, options: q.options,
       optionMedia: q.optionMedia || null, media: q.media || null,
       // How it should be laid out is not a secret, and the slide needs it.
-      mediaSize: q.mediaSize || 'fit', optionLayout: q.optionLayout || 'auto'
+      mediaSize: mediaSize(q.mediaSize), optionLayout: q.optionLayout || 'auto'
     })),
     tieBreaker: tieRevealed ? { ...quiz.tieBreaker } : {
       text: quiz.tieBreaker.text,
@@ -1540,9 +1552,9 @@ async function api(req, res, path) {
       // One media slot per option, however mangled the array arrived.
       const src = Array.isArray(q.optionMedia) ? q.optionMedia : [];
       const optionMedia = options.map((_, i) => cleanMedia(team, src[i]));
-      const mediaSize = MEDIA_SIZES.includes(q.mediaSize) ? q.mediaSize : 'fit';
+      const size = mediaSize(q.mediaSize);
       const optionLayout = OPTION_LAYOUTS.includes(q.optionLayout) ? q.optionLayout : 'auto';
-      return { ...q, options, optionMedia, correct, mediaSize, optionLayout,
+      return { ...q, options, optionMedia, correct, mediaSize: size, optionLayout,
                media: cleanMedia(team, q.media) };
     });
     if (quiz.tieBreaker) quiz.tieBreaker.media = cleanMedia(team, quiz.tieBreaker.media);
