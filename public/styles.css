@@ -559,8 +559,8 @@ button, input, textarea, select { font: inherit; color: inherit; letter-spacing:
    otherwise the gutter would eat the questions instead of the space beside
    them, and the column would drift off centre. */
 body.assist-docked .app {
-  max-width: calc(1040px + var(--assist-w, 400px));
-  padding-right: calc(var(--assist-w, 400px) + 40px);
+  max-width: calc(1040px + var(--assist-w, 400px) + var(--pv-w, 0px));
+  padding-right: calc(var(--assist-w, 400px) + var(--pv-w, 0px) + 40px);
 }
 
 /* Drag handle: a hairline that only colours in on approach, so at rest the
@@ -2175,3 +2175,74 @@ html.dark .play-wave-track.back { opacity: .075; }
 @media (prefers-reduced-motion: reduce) {
   .media-bar.waiting i { animation: none; width: 100% !important; opacity: .5; }
 }
+
+/* THE PREVIEW DOCK: the open question as the room will see it.
+
+   A third column, between the questions being written and the assistant
+   writing them. It only exists where there is width for it - below that the
+   editor and Quizzy already have all the room there is, and a third of a
+   screen given to a thumbnail helps nobody. */
+.preview-dock { display: none; }
+
+@media (min-width: 1500px) {
+  :root { --pv-w: 380px; }
+  body.assist-docked .preview-dock {
+    display: flex; flex-direction: column;
+    position: fixed; top: var(--nav-h); bottom: 0; z-index: 89;
+    right: var(--assist-w, 400px);
+    width: var(--pv-w);
+    background: var(--bg-sunk);
+    border-left: 1px solid var(--line);
+  }
+}
+
+.pv-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--line-soft);
+}
+.pv-head h3 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+.pv-when button { font-size: 12px; padding: 0 10px; min-height: 28px; }
+
+.pv-body { padding: 16px; overflow: hidden; }
+
+/* The slide is laid out at the full size of this window and then shrunk, so
+   the proportions are the ones the projector will show. Scaling, not a smaller
+   layout: everything on a slide is sized in vh and vw, and a miniature built
+   any other way would put the picture and the text in proportions nobody will
+   ever see. transform-origin top left so it shrinks into the corner it starts
+   in, and the wrapper is given the scaled height so the panel lays out around
+   the picture rather than the full-size original. */
+.preview-shot {
+  position: relative; overflow: hidden;
+  border-radius: var(--r); border: 1px solid var(--line);
+  background: var(--bg); box-shadow: var(--shadow);
+}
+.preview-shot > .slide-frame {
+  width: 100vw; height: 100vh;
+  transform: scale(var(--shot-scale, .25));
+  transform-origin: top left;
+  /* Nothing in there is for clicking; it is a picture of a slide. */
+  pointer-events: none;
+}
+
+.pv-settings {
+  padding: 4px 16px 16px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.pv-field label {
+  display: block; margin-bottom: 8px;
+  font-size: 12px; font-weight: 650; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.pv-field .seg { width: 100%; }
+.pv-field .seg button { flex: 1 1 0; font-size: 13px; }
+.pv-field .size-row { margin-top: 0; }
+
+/* How a picture actually gets in. Said next to the box it goes in, because
+   nobody reads a manual for a quiz app. */
+.paste-tip {
+  margin: 2px 0 8px; padding: 9px 12px;
+  background: var(--accent-soft); border-radius: var(--r-sm);
+  color: var(--ink-2); font-size: 13px; line-height: 1.45;
+}
+.paste-tip b { color: var(--ink); font-weight: 650; }

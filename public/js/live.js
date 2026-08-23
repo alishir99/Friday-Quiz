@@ -654,17 +654,32 @@
     var slide = document.querySelector('.slide-frame > .slide');
     // Phones scroll the slide instead; scaling text down there helps nobody.
     if (!slide || !document.body.classList.contains('presenting')) return;
+    Live.fitInto(slide);
+  }
 
+  /* Shrink one slide until all of it is inside its frame.
+
+     Exported because the editor's preview needs the same sum: without it the
+     preview shows a picture and clips the answers, while the projector shows
+     everything a size smaller - and a preview that disagrees with the room is
+     worse than none. */
+  Live.fitInto = function (slide) {
+    if (!slide) return;
+    var had = slide.style.transform;
     slide.style.transform = '';                       // measure unscaled
     var room = slide.clientHeight, need = slide.scrollHeight;
-    if (!room || need <= room + 1) return;
+    /* Nothing to measure against - the slide is not laid out yet. Put back
+       whatever was there rather than leaving it cleared, or a fit that ran
+       correctly a moment ago gets undone by one that ran too early. */
+    if (!room) { slide.style.transform = had; return; }
+    if (need <= room + 1) return;
 
     /* No floor. Small and readable beats large and cut in half, and a floor is
        exactly how the tally ended up behind the stage bar. If a slide is so
        overloaded that this makes it tiny, that is worth seeing. */
     slide.style.transformOrigin = 'top center';
     slide.style.transform = 'scale(' + (room / need).toFixed(4) + ')';
-  }
+  };
 
   /* A picture arriving late makes the slide taller after it was measured. */
   document.addEventListener('load', function (e) {
@@ -783,13 +798,24 @@
   }
 
   function pQuestion(reveal) {
-    var L = live(), q = currentQ();
+    var L = live();
+    return questionSlide(currentQ(), L.index, L.questionCount, reveal,
+      reveal ? null : tallyBox('answers'));
+  }
+
+  /* One question, drawn as the slide the room will see.
+
+     Taken out of pQuestion so the quiz editor's preview can call it too. A
+     preview that is a lookalike drifts from the real thing the first time
+     either is touched; this one cannot, because it is the same function. The
+     live game passes its tally along as `foot`, the editor passes nothing. */
+  function questionSlide(q, index, count, reveal, foot) {
     var opts = filledOptions(q);
     var shape = optionShape(opts, q.optionLayout);
     var qShape = questionShape(q.text);
 
     return el('div.slide' + (q.media ? '.has-media' : ''), [
-      el('div.s-kicker', { text: 'Question ' + (L.index + 1) + ' of ' + L.questionCount }),
+      el('div.s-kicker', { text: 'Question ' + (index + 1) + ' of ' + count }),
       el('h2.s-q' + (qShape ? '.' + qShape : ''), { text: q.text }),
       stageMedia(q.media, q.mediaSize),
       el('div.s-opts.opts-' + shape + '.cols-' + optionColumns(shape, opts.length)
@@ -810,9 +836,15 @@
             el('span.i', { html: QC.infoIcon, 'aria-hidden': 'true' }),
             el('span.t', { text: q.note })
           ]) : null)
-        : tallyBox('answers')
+        : foot
     ]);
   }
+
+  /* What the editor's preview asks for. `reveal` shows it as the answer slide,
+     which is the other half of what the quiz maker is deciding. */
+  Live.previewSlide = function (q, index, count, reveal) {
+    return questionSlide(q, index, count, !!reveal, null);
+  };
 
   /* Held on to so the counter can be nudged without rebuilding the slide.
      Cleared whenever a slide is drawn, so a stale one is never written to. */

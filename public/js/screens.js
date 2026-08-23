@@ -1039,6 +1039,145 @@
       ]);
     }
 
+    /* THE PREVIEW: the open question, drawn as the room will see it.
+
+       The same function the projector calls, not a lookalike - a lookalike
+       drifts from the real thing the first time either is touched. It is drawn
+       at the size of this very screen and then scaled down to fit the panel,
+       which is what makes it honest: everything on a slide is sized in vh and
+       vw, so a miniature built any other way would put the picture and the
+       text in proportions nobody will ever see.
+
+       The two settings that only make sense against a picture of the result -
+       how big the picture is, how the answers are arranged - live here beside
+       it rather than buried down the card, and move it as they are dragged. */
+    var previewBody = null, previewSettings = null;
+
+    function drawPreview() {
+      if (!previewBody) return;
+      var q = quiz.questions[open];
+      QC.clear(previewBody);
+      QC.clear(previewSettings);
+
+      if (!q) {
+        QC.append(previewBody, el('p.dim.small.center', { style: { padding: '30px 16px' },
+          text: open === quiz.questions.length ? 'The tiebreaker has no slide to preview.'
+                                               : 'Open a question to see it here.' }));
+        return;
+      }
+
+      var slide = QC.live.previewSlide(q, open, quiz.questions.length, previewReveal);
+      var shot = el('div.preview-shot', [el('div.slide-frame', slide)]);
+      QC.append(previewBody, shot);
+      scalePreview(shot);
+      fitPreview();
+      /* A picture arriving late makes the slide taller after it was measured,
+         and the first fit runs before it has loaded - so measure again when it
+         does. The projector has the same listener; this one is the preview's,
+         because that one only fires while presenting. */
+      [].forEach.call(slide.querySelectorAll('img, video'), function (m) {
+        /* A cached picture is already complete and will never fire `load`, so
+           asking for the event alone leaves the commonest case unmeasured. */
+        if (m.complete || m.readyState >= 1) { fitPreview(); return; }
+        m.addEventListener('load', fitPreview);
+        m.addEventListener('loadedmetadata', fitPreview);
+      });
+
+      QC.append(previewSettings, [
+        q.media ? sizeControl(q) : null,
+        arrangeControl(q)
+      ]);
+    }
+
+    /* Shrink the slide until all of it is inside its frame - the same sum the
+       projector does, run on the miniature. Next frame, so it measures a slide
+       that has actually been laid out. */
+    function fitPreview() {
+      requestAnimationFrame(function () {
+        var slide = previewBody && previewBody.querySelector('.slide');
+        if (slide) QC.live.fitInto(slide);
+      });
+    }
+
+    /* The slide is laid out at the full size of this window and then shrunk.
+       transform, not a smaller layout: scaling is the only way the proportions
+       survive, and it costs nothing because nothing reflows. */
+    function scalePreview(shot) {
+      var pane = shot.parentNode;
+      var w = (pane && pane.clientWidth) || 320;
+      var k = w / Math.max(320, window.innerWidth);
+      shot.style.setProperty('--shot-scale', k.toFixed(4));
+      shot.style.height = Math.round(window.innerHeight * k) + 'px';
+    }
+
+    function sizeControl(q) {
+      var read = el('span.size-read', { text: QC.picSize(q.mediaSize) + '%' });
+      var slider = el('input.size-range', {
+        type: 'range', min: String(QC.PIC_MIN), max: String(QC.PIC_MAX), step: '1',
+        value: String(QC.picSize(q.mediaSize)), 'aria-label': 'Picture size on the big screen'
+      });
+      slider.addEventListener('input', function () {
+        q.mediaSize = Number(slider.value);
+        read.textContent = slider.value + '%';
+        // Move the picture in the preview without rebuilding the whole slide -
+        // dragging a slider that redraws on every pixel is a slideshow.
+        var box = previewBody.querySelector('.s-media');
+        if (box) box.style.setProperty('--pic', q.mediaSize + 'vh');
+        fitPreview();          // a taller picture may push the answers out
+        saveSoon();
+      });
+      return el('div.pv-field', [
+        el('label', { text: 'Picture size' }),
+        el('div.size-row', [slider, read])
+      ]);
+    }
+
+    function arrangeControl(q) {
+      var seg = choice(q, 'optionLayout', 'auto', [
+        ['auto', 'Auto', 'Chosen from how long the answers are'],
+        ['row', 'In a row', 'Side by side, for short answers'],
+        ['stacked', 'Stacked', 'One per line, for long answers']
+      ], drawPreview);
+      return el('div.pv-field', [el('label', { text: 'Answers' }), seg]);
+    }
+
+    var previewReveal = false;
+
+    function previewDock() {
+      previewBody = el('div.pv-body');
+      previewSettings = el('div.pv-settings');
+
+      var toggle = el('div.seg.pv-when', [
+        el('button', { type: 'button', text: 'Question', class: previewReveal ? '' : 'on',
+          onclick: function () { previewReveal = false; drawPreview(); } }),
+        el('button', { type: 'button', text: 'Answer', class: previewReveal ? 'on' : '',
+          onclick: function () { previewReveal = true; drawPreview(); } })
+      ]);
+      toggle.addEventListener('click', function (e) {
+        if (e.target.tagName !== 'BUTTON') return;
+        [].forEach.call(toggle.children, function (b) { b.classList.remove('on'); });
+        e.target.classList.add('on');
+      });
+
+      var dock = el('aside.preview-dock', [
+        el('div.pv-head', [
+          el('h3', { text: 'On the big screen' }),
+          el('div.spacer'),
+          toggle
+        ]),
+        previewBody,
+        previewSettings
+      ]);
+
+      drawPreview();
+      // The miniature is a fraction of the window, so it has to be remeasured.
+      window.addEventListener('resize', function () {
+        var shot = previewBody && previewBody.querySelector('.preview-shot');
+        if (shot) scalePreview(shot);
+      });
+      return dock;
+    }
+
     /* Drag the left edge to set how much of the screen Quizzy gets. Pointer
        events rather than mouse ones, so a pen or a touchscreen works too. */
     function resizeGrip() {
@@ -1124,6 +1263,7 @@
       QC.screens._openQ = (open === i ? -1 : i);
       open = QC.screens._openQ;
       renderList();
+      drawPreview();
       var card = listEl.children[open];
       if (card) {
         card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1179,29 +1319,30 @@
       /* Overrides for the two things the automatic layout sometimes gets
          wrong. Proportions, not positions - whatever is picked still has to
          work on a projector and on somebody's phone. */
-      function choice(obj, key, fallback, choices) {
-        var seg = el('div.seg', choices.map(function (c) {
-          var on = (obj[key] || fallback) === c[0];
-          return el('button', { type: 'button', text: c[1], class: on ? 'on' : '',
-            title: c[2] || '',
-            onclick: function (e) {
-              obj[key] = c[0];
-              e.target.parentNode.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
-              e.target.classList.add('on');
-              saveSoon();
-            } });
-        }));
-        return seg;
-      }
-
       var media = mediaField(q, 'media', false, q.mediaHint);
       card.appendChild(el('div.q-body', [
         el('div.field', [
           el('label', { text: 'Question ' + (i + 1) }),
+          el('p.paste-tip', [
+            el('b', { text: 'Pictures:' }),
+            ' right-click any picture on the web, choose ',
+            el('b', { text: 'Copy image' }),
+            ', then paste it in here. Pasting a link works on most sites - though '
+            + 'a search results page is not a picture, so that one will not.'
+          ]),
           composeBox(bindArea(q, 'text', 'What is the question?', 'Question ' + (i + 1)), media)
         ]),
         el('div.field', [
           el('label', { text: 'Options' }),
+          /* Said here rather than left to be discovered. Copying the image
+             itself is the reliable half and the one nobody thinks of, so it
+             goes first; a link is the obvious half and works on most sites. */
+          el('p.paste-tip', [
+            el('b', { text: 'Pictures:' }),
+            ' right-click any picture on the web, choose ',
+            el('b', { text: 'Copy image' }),
+            ', then paste into an option below. Pasting a link works too.'
+          ]),
           (function () {
             var needsCorrect = q.correct === null && q.options.some(function (o) { return o.trim(); });
             return el('span.hint' + (needsCorrect ? '.warn' : ''), { text: needsCorrect
@@ -1234,14 +1375,6 @@
               }) : null
             ]);
           })),
-          el('div.row', { style: { marginTop: '12px', alignItems: 'center', gap: '10px' } }, [
-            el('span.hint', { text: 'Arrangement' }),
-            choice(q, 'optionLayout', 'auto', [
-              ['auto', 'Auto', 'Chosen from how long the answers are'],
-              ['row', 'In a row', 'Side by side, for short answers'],
-              ['stacked', 'Stacked', 'One per line, for long answers']
-            ])
-          ]),
           q.options.length < QC.MAX_OPTIONS ? el('button.btn.ghost.sm', {
             type: 'button', text: '+  Add another option',
             style: { marginTop: '12px', alignSelf: 'flex-start' },
@@ -1256,26 +1389,6 @@
             text: 'Six is the most you can have.' })
         ]),
         /* Only worth showing once there is a picture to size. */
-        /* Only worth showing once there is a picture to size. Three presets
-           were never the size anybody wanted, so this is a slider. */
-        q.media ? (function () {
-          var val = QC.picSize(q.mediaSize);
-          var read = el('span.size-read', { text: val + '%' });
-          var slider = el('input.size-range', {
-            type: 'range', min: String(QC.PIC_MIN), max: String(QC.PIC_MAX), step: '1',
-            value: String(val), 'aria-label': 'Picture size on the big screen'
-          });
-          slider.addEventListener('input', function () {
-            q.mediaSize = Number(slider.value);
-            read.textContent = slider.value + '%';
-            markDirty(); saveSoon();
-          });
-          return el('div.field', [
-            el('label', { text: 'Picture size on the big screen' }),
-            el('span.hint', { text: 'How much of the slide height it takes. The rest goes to the question and the answers.' }),
-            el('div.size-row', [slider, read])
-          ]);
-        })() : null,
         el('div.field', [
           el('label', { text: 'Extra note  (optional)' }),
           el('span.hint', { text: 'Shown with the answer: a bit of trivia or an explanation.' }),
@@ -1622,9 +1735,32 @@
       return card;
     }
 
+    /* A little segmented control bound to one field. Lives out here rather
+       than inside the question card because the preview panel uses it too. */
+    function choice(obj, key, fallback, choices, after) {
+      return el('div.seg', choices.map(function (c) {
+        var on = (obj[key] || fallback) === c[0];
+        return el('button', { type: 'button', text: c[1], class: on ? 'on' : '',
+          title: c[2] || '',
+          onclick: function (e) {
+            obj[key] = c[0];
+            e.target.parentNode.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
+            e.target.classList.add('on');
+            saveSoon();
+            if (after) after();
+          } });
+      }));
+    }
+
+    /* Typing moves the preview too, but a beat behind: rebuilding a slide on
+       every keystroke is a slideshow, not a preview. */
+    var previewSoon = debounce(function () { drawPreview(); }, 350);
+
     function bindInput(obj, key, ph) {
       var input = el('input.input', { value: obj[key] || '', placeholder: ph || '' });
-      input.addEventListener('input', function () { obj[key] = input.value; markDirty(); saveSoon(); });
+      input.addEventListener('input', function () {
+        obj[key] = input.value; markDirty(); saveSoon(); previewSoon();
+      });
       return input;
     }
 
@@ -1632,7 +1768,7 @@
       var t = el('textarea.textarea', { placeholder: ph || '', rows: '2' });
       t.value = obj[key] || '';
       t.addEventListener('input', function () {
-        obj[key] = t.value; markDirty(); saveSoon();
+        obj[key] = t.value; markDirty(); saveSoon(); previewSoon();
         if (key !== 'text') return;
         var head = t.closest('.q-card').querySelector('.q-title');
         if (!head) return;
@@ -1667,6 +1803,7 @@
     return el('div.stack', [
       el('a.btn.quiet.sm', { href: '#/', 'data-nav': '', text: '‹  Back', style: { alignSelf: 'flex-start' } }),
       headEl, listEl,
+      previewDock(),
       el('p.dim.small.center', { style: { marginTop: '26px' },
         text: 'Saves as you type. Nobody else can see the answers until you start the quiz.' }),
       assistDock(),
