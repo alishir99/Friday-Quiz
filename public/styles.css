@@ -856,15 +856,51 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
   transition: background .45s var(--ease), border-color .45s var(--ease),
               opacity .45s var(--ease), transform .45s var(--ease);
 }
-/* Picture options on the projector: the picture is the answer, so give it room
-   and let the letter sit alongside rather than the other way round. */
+/* Picture options on the projector: the picture IS the answer, so it gets the
+   card. Edge to edge, with the card's own rounding clipping its corners - a
+   picture inset inside a padded pill is a stamp on an envelope, and across a
+   room the thing people are being asked to look at ends up the smallest part
+   of it.
+
+   The letter moves on top of the picture rather than sitting above it in a row
+   of its own, which is where most of the height was going. The word underneath
+   keeps a little room, because text against an edge reads as clipped. */
 .s-opts.with-media { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-.s-opts.with-media > .s-opt { flex-direction: column; text-align: center; gap: 12px; }
+.s-opts.with-media > .s-opt {
+  flex-direction: column; text-align: center; gap: 0;
+  padding: 0; overflow: hidden; position: relative;
+}
 .s-opt .opt-pic {
   /* --opt-pic is what the quiz maker dragged to; the clamp is the old fixed
-     default, kept as the fallback for anything drawn without one. */
-  width: 100%; max-height: var(--opt-pic, clamp(120px, 18vh, 260px));
-  object-fit: contain; border-radius: var(--r-md);
+     default, kept as the fallback for anything drawn without one.
+
+     height auto, so the box is the picture's own shape and there is no
+     letterboxing inside it either - the cap is on how tall it may get, and
+     the width of the card is the other limit. */
+  display: block; width: 100%; height: auto;
+  max-height: var(--opt-pic, clamp(120px, 18vh, 260px));
+  object-fit: contain; border-radius: 0;
+}
+/* The letter, sat on the picture. Small and half-transparent so it labels the
+   card without taking a bite out of it. */
+.s-opts.with-media > .s-opt > .k {
+  position: absolute; top: clamp(8px, 1vh, 14px); left: clamp(8px, 1vh, 14px);
+  z-index: 1;
+  width: clamp(30px, min(2.6vw, 3.9vh), 44px); height: clamp(30px, min(2.6vw, 3.9vh), 44px);
+  font-size: clamp(14px, min(1.4vw, 2.1vh), 22px);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+}
+/* The overlaid badge is a more specific selector than the reveal's, so without
+   this the right answer kept its white lettering and lost the green behind it -
+   white on near-white, which is no letter at all. */
+.s-opts.with-media > .s-opt.right > .k {
+  background: var(--good); color: #fff; border-color: var(--good);
+}
+/* The answer's own words, under the picture. */
+.s-opts.with-media > .s-opt > span:not(.k) {
+  padding: clamp(8px, 1.2vh, 16px) clamp(10px, 1.2vw, 18px);
 }
 .s-opt .opt-clip { width: 100%; }
 .s-opt .k {
