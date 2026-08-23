@@ -1067,7 +1067,14 @@
       }
 
       var slide = QC.live.previewSlide(q, open, quiz.questions.length, previewReveal);
-      var shot = el('div.preview-shot', [el('div.slide-frame', slide)]);
+      /* Frame inside a stage, the same nesting the projector uses. The frame
+         sits inset from the screen edge by a margin of its own, so scaling the
+         frame alone put that margin outside the miniature - the slide started
+         24px in and hung the same off the other side. The stage is exactly one
+         screen wide, margins included, so nothing can escape it. */
+      var shot = el('div.preview-shot', [
+        el('div.preview-stage', [el('div.slide-frame', slide)])
+      ]);
       QC.append(previewBody, shot);
       scalePreview(shot);
       fitPreview();
@@ -1103,8 +1110,15 @@
        transform, not a smaller layout: scaling is the only way the proportions
        survive, and it costs nothing because nothing reflows. */
     function scalePreview(shot) {
-      var pane = shot.parentNode;
-      var w = (pane && pane.clientWidth) || 320;
+      /* The shot's own width, not its parent's. clientWidth includes padding,
+         so measuring the panel handed back its 16px either side as if they
+         were room to draw in - the slide came out a shade too big and hung off
+         the right-hand edge, which is what the clipping was. */
+      var w = shot.clientWidth;
+      /* On the very first draw the panel is not laid out yet and this is 0.
+         Guessing a width leaves the miniature the wrong size until something
+         else happens to redraw it, so wait a frame and measure properly. */
+      if (!w) { requestAnimationFrame(function () { scalePreview(shot); }); return; }
       var k = w / Math.max(320, window.innerWidth);
       shot.style.setProperty('--shot-scale', k.toFixed(4));
       shot.style.height = Math.round(window.innerHeight * k) + 'px';
@@ -1125,6 +1139,7 @@
         if (box) box.style.setProperty('--pic', q.mediaSize + 'vh');
         fitPreview();          // a taller picture may push the answers out
         saveSoon();
+        drawPreviewSoon();     // and settle it properly once the drag pauses
       });
       return el('div.pv-field', [
         el('label', { text: 'Picture size' }),
@@ -1142,6 +1157,9 @@
     }
 
     var previewReveal = false;
+    /* Redrawn once the drag stops, so the fit is measured against a slide that
+       has finished moving rather than one mid-gesture. */
+    var drawPreviewSoon = debounce(function () { drawPreview(); }, 250);
 
     function previewDock() {
       previewBody = el('div.pv-body');

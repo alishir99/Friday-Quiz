@@ -2217,8 +2217,12 @@ html.dark .play-wave-track.back { opacity: .075; }
   border-radius: var(--r); border: 1px solid var(--line);
   background: var(--bg); box-shadow: var(--shadow);
 }
-.preview-shot > .slide-frame {
+/* Exactly one screen, scaled into the corner it starts in. The frame keeps its
+   own margins inside this, so the inset round the slide is the real one. */
+.preview-shot > .preview-stage {
   width: 100vw; height: 100vh;
+  display: flex; flex-direction: column;
+  background: var(--bg);
   transform: scale(var(--shot-scale, .25));
   transform-origin: top left;
   /* Nothing in there is for clicking; it is a picture of a slide. */
