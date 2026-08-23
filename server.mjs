@@ -15,6 +15,7 @@ import { extname, join, normalize, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces } from 'node:os';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { lookup as dnsLookup } from 'node:dns/promises';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 
@@ -84,6 +85,144 @@ const MIME = {
   '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon'
 };
+
+/* PULLING A PICTURE OFF A URL.
+
+   Handy, and the single most dangerous thing in this file: the server is being
+   asked to fetch an address somebody else chose. Left open that is a request
+   forgery - the quiz maker types http://169.254.169.254/... and the box
+   happily fetches its own cloud credentials and files them under this week's
+   quiz. It runs on an Oracle VM where that address answers.
+
+   So every hop is resolved first and every resolved address is checked. Only
+   the quiz maker may ask, only http(s) is followed, redirects are counted, the
+   read is capped and the whole thing is on a timer.
+
+   The remaining hole is DNS rebinding: a name that passes the check and then
+   resolves to something private when fetch() looks it up again a moment later.
+   Closing it properly means dialling the IP by hand and carrying the Host
+   header, which is a lot of machinery for a feature only the quiz maker can
+   reach on a team server. Named rather than hidden. */
+const FETCH_TIMEOUT = 10000;
+const FETCH_MAX_HOPS = 3;
+const FETCH_MAX_BYTES = 20 * 1024 * 1024;
+
+function isBlockedAddress(ip) {
+  const v4 = ip.replace(/^::ffff:/i, '');           // IPv4 wearing an IPv6 hat
+  const parts = v4.split('.');
+  if (parts.length === 4 && parts.every((n) => /^\d+$/.test(n))) {
+    const [a, b] = parts.map(Number);
+    if (a === 0 || a === 10 || a === 127) return true;          // this host, private
+    if (a === 169 && b === 254) return true;                    // link-local: the metadata service
+    if (a === 172 && b >= 16 && b <= 31) return true;           // private
+    if (a === 192 && b === 168) return true;                    // private
+    if (a === 100 && b >= 64 && b <= 127) return true;          // carrier-grade NAT
+    if (a === 192 && b === 0) return true;                      // protocol assignments
+    if (a === 198 && (b === 18 || b === 19)) return true;        // benchmarking
+    if (a >= 224) return true;                                   // multicast and reserved
+    return false;
+  }
+  const v6 = ip.toLowerCase();
+  if (v6 === '::' || v6 === '::1') return true;
+  if (/^f[cd]/.test(v6)) return true;                            // unique local
+  if (/^fe[89ab]/.test(v6)) return true;                         // link-local
+  return false;
+}
+
+/* Every address the name answers to has to be allowed, not just the first:
+   a host that returns one public and one private address would otherwise
+   walk straight through. */
+async function assertPublicHost(hostname) {
+  let addrs;
+  try {
+    addrs = await dnsLookup(hostname, { all: true });
+  } catch {
+    throw new Error('That address does not resolve');
+  }
+  if (!addrs.length || addrs.some((a) => isBlockedAddress(a.address))) {
+    throw new Error('That address is not one this server will fetch');
+  }
+}
+
+/* A search results page is not a picture, and the commonest thing anybody will
+   paste. Say so plainly rather than fetching a megabyte of HTML and reporting
+   that it is not an image. */
+function searchPageHint(u) {
+  const host = u.hostname.replace(/^www\./, '');
+  const isSearch = /^(google|bing|duckduckgo|yandex)\./.test(host)
+    || host === 'images.google.com'
+    || (host.endsWith('google.com') && u.pathname.startsWith('/search'));
+  if (!isSearch) return null;
+  return 'That is a search results page, not a picture. Open the image itself, '
+    + 'then right-click it and copy the image address.';
+}
+
+async function fetchRemote(rawUrl, hops = 0) {
+  if (hops > FETCH_MAX_HOPS) throw new Error('That address redirects too many times');
+
+  let u;
+  try { u = new URL(rawUrl); } catch { throw new Error('That is not a web address'); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    throw new Error('Only http and https addresses can be fetched');
+  }
+  const hint = searchPageHint(u);
+  if (hint) throw new Error(hint);
+
+  await assertPublicHost(u.hostname);
+
+  const res = await fetch(u, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(FETCH_TIMEOUT),
+    headers: {
+      // Some hosts refuse an unnamed client outright.
+      'user-agent': 'Mozilla/5.0 (compatible; FridayQuiz/1.0)',
+      accept: 'image/*,text/html;q=0.8'
+    }
+  });
+
+  // Follow it by hand, so the new address is checked like the first one was.
+  if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+    return fetchRemote(new URL(res.headers.get('location'), u).href, hops + 1);
+  }
+  if (!res.ok) throw new Error('That address answered ' + res.status);
+
+  const declared = Number(res.headers.get('content-length') || 0);
+  if (declared > FETCH_MAX_BYTES) throw new Error('That file is too big');
+
+  /* Read in chunks and stop at the cap. content-length is a claim, not a
+     promise, and a server that lies about it could otherwise fill the disk. */
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of res.body) {
+    total += chunk.length;
+    if (total > FETCH_MAX_BYTES) throw new Error('That file is too big');
+    chunks.push(chunk);
+  }
+  return {
+    url: u,
+    mime: String(res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase(),
+    body: Buffer.concat(chunks)
+  };
+}
+
+/* The picture a page says represents it. Every share button on the internet
+   reads this same tag, so it is what a news story or a Wikipedia article will
+   hand back for the picture at the top. */
+function ogImage(html, base) {
+  const head = html.slice(0, 200000);            // it is a <head> tag; do not scan a novel
+  const patterns = [
+    /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i
+  ];
+  for (const re of patterns) {
+    const m = head.match(re);
+    if (m) {
+      try { return new URL(m[1].replace(/&amp;/g, '&'), base).href; } catch { /* keep looking */ }
+    }
+  }
+  return null;
+}
 
 /* Extension back to content type, for serving uploaded media. */
 const MEDIA_MIME = Object.fromEntries(
@@ -1565,6 +1704,63 @@ async function api(req, res, path) {
 
   /* Media upload. The body is the raw file, the type comes from the header,
      which avoids hand-rolling a multipart parser for no benefit. */
+  /* The same thing as an upload, only the file comes off the web. Stored and
+     owned exactly like one, so everything downstream - the ownership check,
+     the serving, the history - carries on not caring where it came from. */
+  if (path === '/api/media/from-url' && req.method === 'POST') {
+    if (!requireUser()) return;
+    if (!isMaster()) return json(res, 403, { error: 'Only the quiz maker can add media' });
+
+    const { url } = await readBody(req);
+    if (!url || typeof url !== 'string') return json(res, 400, { error: 'No address given' });
+
+    let got;
+    try {
+      got = await fetchRemote(url.trim());
+
+      /* A page rather than a file: read the picture it says represents it.
+         Only one step - if that picture is itself a page, something is wrong
+         and guessing further would just be fetching the web at random. */
+      if (got.mime.startsWith('text/html')) {
+        const found = ogImage(got.body.toString('utf8'), got.url.href);
+        if (!found) {
+          return json(res, 415, {
+            error: 'That page does not offer a picture. Right-click the image itself '
+                 + 'and copy the image address.'
+          });
+        }
+        got = await fetchRemote(found);
+      }
+    } catch (e) {
+      // These messages are written to be read by the quiz maker, so pass them on.
+      return json(res, 400, { error: e.message || 'That address could not be fetched' });
+    }
+
+    const type = MEDIA_TYPES[got.mime];
+    if (!type) {
+      return json(res, 415, {
+        error: got.mime ? 'That address is a ' + got.mime + ', not a picture' : 'That is not a picture'
+      });
+    }
+    if (!got.body.length) return json(res, 400, { error: 'That file was empty' });
+
+    const id = randomBytes(16).toString('hex');
+    await mkdir(MEDIA_DIR, { recursive: true });
+    await writeFile(join(MEDIA_DIR, id + '.' + type.ext), got.body);
+    db.mediaTeam[id] = team.id;
+    await persist();
+
+    return json(res, 200, {
+      ok: true,
+      media: {
+        id, kind: type.kind, mime: got.mime,
+        // The last part of the path makes a better label than the whole URL.
+        name: decodeURIComponent(got.url.pathname.split('/').pop() || '').slice(0, 120)
+              || got.url.hostname
+      }
+    });
+  }
+
   if (path === '/api/media' && req.method === 'POST') {
     if (!requireUser()) return;
     if (!isMaster()) return json(res, 403, { error: 'Only the quiz maker can add media' });

@@ -1115,6 +1115,47 @@ test('holding answers to the end still closes a question once it is past', async
   await call('/api/live/stop', { method: 'POST', as: 'ali' });
 });
 
+/* Fetching a picture from a URL means the server makes a request somebody else
+   chose, which is a forgery hole if it is left open: the box would happily
+   fetch its own cloud credentials off the link-local metadata address and file
+   them under this week's quiz. It runs on a VM where that address answers. */
+test('a picture can be pulled from a link, but not from anywhere', async () => {
+  // Only the quiz maker may ask, so make sure that is who is asking.
+  const me = (await stateAs('ali')).me;
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: me }, as: 'ali' });
+
+  const from = (url, as = 'ali') =>
+    call('/api/media/from-url', { method: 'POST', body: { url }, as });
+
+  // Only the quiz maker, like an upload.
+  assert.equal((await from('http://example.com/x.png', 'bea')).status, 403,
+    'a player cannot make the server fetch things');
+
+  for (const [url, why] of [
+    ['http://169.254.169.254/latest/meta-data/', 'the cloud metadata service'],
+    ['http://127.0.0.1:8123/api/state', 'the server talking to itself'],
+    ['http://localhost:8123/api/state', 'the same by name'],
+    ['http://10.0.0.5/secret', 'a private network'],
+    ['http://192.168.1.1/', 'the router'],
+    ['http://[::1]/', 'loopback in v6']
+  ]) {
+    const r = await from(url);
+    assert.equal(r.status, 400, why + ' must be refused: ' + url);
+    assert.match(r.body.error, /will fetch|does not resolve/, why);
+  }
+
+  assert.equal((await from('file:///etc/passwd')).status, 400, 'no file://');
+  assert.equal((await from('ftp://example.com/x.png')).status, 400, 'no ftp://');
+  assert.equal((await from('not a url')).status, 400, 'and not nonsense');
+  assert.equal((await from('')).status, 400, 'nor nothing at all');
+
+  // The commonest paste of all gets told what to do instead of a vague failure.
+  const search = await from('https://www.google.com/search?q=elephant&udm=2');
+  assert.equal(search.status, 400);
+  assert.match(search.body.error, /search results page/, 'says so plainly');
+  assert.match(search.body.error, /copy the image address/, 'and what to do instead');
+});
+
 /* The wooden spoon writes next Friday's quiz and whoever finished just above
    them picks the topic. When those two finish level - same score, and the same
    distance out on the tiebreaker - nothing is left to say which of them takes

@@ -100,6 +100,11 @@
     return String(n || '').replace(/[^\x20-\x7E]/g, '');
   }
 
+  /* The same as an upload, only the server does the downloading. */
+  Net.mediaFromUrl = function (url) {
+    return Net.call('api/media/from-url', 'POST', { url: url }).then(function (r) { return r.media; });
+  };
+
   Net.pastQuiz = function (id) { return Net.call('api/history/' + id + '/quiz'); };
 
   Net.assist = function (messages, topic) { return Net.call('api/assist', 'POST', { messages: messages, topic: topic }); };

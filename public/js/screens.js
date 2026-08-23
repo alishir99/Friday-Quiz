@@ -1212,14 +1212,19 @@
             var key = QC.OPTION_KEYS[oi];
             if (!Array.isArray(q.optionMedia)) q.optionMedia = [];
             while (q.optionMedia.length < q.options.length) q.optionMedia.push(null);
+            var optField = bindInput(q.options, oi, 'Option ' + key);
+            var optMedia = mediaField(q.optionMedia, oi, true, (q.optionHints || [])[oi]);
+            // Same as the question box: a picture or a bare link pasted into
+            // an option becomes that option's picture.
+            optField.addEventListener('paste', function (e) { optMedia.takePaste(e); });
             return el('div.opt-row', [
               el('button.opt-key' + (q.correct === oi ? '.on' : ''), {
                 type: 'button', text: key,
                 'aria-label': 'Mark option ' + key + ' as correct',
                 onclick: function () { q.correct = oi; renderList(); saveSoon(); refreshHead(); }
               }),
-              bindInput(q.options, oi, 'Option ' + key),
-              mediaField(q.optionMedia, oi, true, (q.optionHints || [])[oi]),
+              optField,
+              optMedia,
               q.options.length > QC.MIN_OPTIONS ? el('button.opt-drop', {
                 type: 'button', text: '×', 'aria-label': 'Remove option ' + key,
                 onclick: function () {
@@ -1309,10 +1314,56 @@
       key = key == null ? 'media' : key;
       hint = String(hint || '').trim();
       var wrap = el('div.compose-media');
-      var busy = false, busyName = '', progress = 0, fill = null;
+      var busy = false, busyName = '', progress = 0, fill = null, fromWeb = false;
 
       // Called by the question box and the card, so a drop lands here.
       wrap.dropFiles = takeFiles;
+      wrap.takePaste = takePaste;
+
+      /* A paste on the question or an option comes here first.
+
+         Two things arrive on a clipboard and both are worth having. Copying an
+         image in a browser puts the picture itself there - that is what
+         "Copy image" does, and it is the answer for anything sat behind a
+         search page, because the file travels rather than the address. Copying
+         a link puts text there, and if that text is nothing but a web address
+         it is almost certainly meant as the picture.
+
+         Anything else - a word, a sentence, an address in the middle of a
+         sentence - is left alone and pastes as text. Returns true only when it
+         has taken over. */
+      function takePaste(e) {
+        if (busy || target[key]) return false;
+        var dt = e.clipboardData;
+        if (!dt) return false;
+
+        var files = Array.prototype.slice.call(dt.files || []);
+        if (files.length) { e.preventDefault(); takeFiles(files); return true; }
+
+        var text = String(dt.getData('text/plain') || '').trim();
+        if (!/^https?:\/\/\S+$/i.test(text)) return false;
+        e.preventDefault();
+        fromUrl(text);
+        return true;
+      }
+
+      /* Fetched by the server, not the browser: the picture has to end up in
+         this team's media store either way, and going via the browser would
+         mean asking every site on the internet to allow us by CORS. */
+      function fromUrl(url) {
+        busy = true; fromWeb = true; busyName = shortUrl(url); progress = 0;
+        draw();
+        QC.net.mediaFromUrl(url).then(function (media) {
+          busy = false;
+          target[key] = media;
+          draw(); saveSoon(); refreshHead();
+          QC.toast(QC.mediaLabel(media) + ' added');
+        }).catch(function (err) {
+          busy = false;
+          draw();
+          QC.toast(err.message);
+        });
+      }
 
       function draw() {
         QC.clear(wrap);
@@ -1337,7 +1388,7 @@
       }
 
       function upload(file) {
-        busy = true; busyName = file.name || 'that file'; progress = 0;
+        busy = true; fromWeb = false; busyName = file.name || 'that file'; progress = 0;
         draw();
         QC.net.uploadMedia(file, function (f) {
           progress = f;
@@ -1358,8 +1409,9 @@
         if (busy) {
           fill = el('i', { style: { width: Math.round(progress * 100) + '%' } });
           return el('div.attach.busy', [
-            el('span.attach-t', { text: 'Uploading ' + busyName + '…' }),
-            el('div.media-bar', [fill])
+            // No progress to report on a fetch - the server is doing it.
+            el('span.attach-t', { text: (fromWeb ? 'Fetching ' : 'Uploading ') + busyName + '…' }),
+            el('div.media-bar' + (fromWeb ? '.waiting' : ''), [fill])
           ]);
         }
 
@@ -1395,7 +1447,7 @@
           el('span.attach-icon', { text: '📎', 'aria-hidden': 'true' }),
           el('span.attach-t', { text: hint
             ? 'Quizzy suggests: ' + hint + ' - drop it here or click to choose'
-            : 'Drop a picture, sound or video here, or click to choose one' }),
+            : 'Drop a picture, sound or video here, click to choose one, or paste a link' }),
           input
         ]);
       }
@@ -1449,7 +1501,18 @@
     function composeBox(textarea, mediaEl) {
       var box = el('div.q-compose', [textarea, mediaEl]);
       dragTarget(box, function (files) { mediaEl.dropFiles(files); });
+      // A picture or a bare link pasted into the question becomes the media.
+      textarea.addEventListener('paste', function (e) { mediaEl.takePaste(e); });
       return box;
+    }
+
+    /* Enough of an address to recognise while it is being fetched. */
+    function shortUrl(url) {
+      try {
+        var u = new URL(url);
+        var last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || '');
+        return last && last.length < 40 ? last : u.hostname.replace(/^www\./, '');
+      } catch (e) { return 'that link'; }
     }
 
     /* Dropping a file anywhere else on an open question works too, so nobody
