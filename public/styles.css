@@ -1401,9 +1401,9 @@ audio.media-player { height: 44px; }
 }
 .slide.has-media { justify-content: flex-start; }
 /* Sound is a bar, not a picture - it should not stretch to fill the slide. */
-.s-media.audio { flex: 0 0 auto; }
-.s-media.audio { justify-content: stretch; align-items: stretch; }
-.s-media audio { width: 100%; max-width: 760px; height: 54px; }
+.s-media.audio { flex: 0 0 auto; justify-content: stretch; align-items: stretch; }
+/* The element is only the engine now - the card above is what is seen. */
+.s-media audio { display: none; }
 
 /* With media the question text gives up some room so the options still fit. */
 .slide.has-media .s-q { font-size: clamp(24px, min(3.1vw, 4.65vh), 46px); }
@@ -1418,31 +1418,141 @@ audio.media-player { height: 44px; }
   object-fit: contain; border-radius: var(--r);
   margin-top: 16px; background: var(--surface-2);
 }
-/* Something is playing on the projector, and this phone can only say so. */
+/* Something is playing on the projector, and this phone can only say so.
+   Same dark surface as the big screen's card, for the same reason: the trace
+   is light, and light needs somewhere dark to be light against. It also makes
+   the two screens plainly the same object seen twice. */
 .play-media-note {
-  display: flex; flex-direction: column; align-items: center; gap: 14px;
-  margin-top: 16px; padding: 20px;
-  border: 1px dashed var(--line); border-radius: var(--r);
-  color: var(--ink-2); font-size: 17px; font-weight: 500;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  margin-top: 16px; padding: 16px 18px 18px;
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(120% 150% at 20% 0%, rgba(96, 74, 220, .32), transparent 62%),
+    linear-gradient(158deg, #191c33 0%, #0c0e1a 60%, #15122b 100%);
+  border: 1px solid rgba(255, 255, 255, .09);
+  color: rgba(255, 255, 255, .72); font-size: 16px; font-weight: 500;
 }
 
-/* The bars. scaleY rather than height: it is the difference between the
-   compositor moving pixels it already has and the browser re-laying out
-   twenty-two elements sixty times a second. */
-.wave {
-  display: flex; align-items: center; justify-content: center;
-  gap: 3px; height: 34px; width: 100%; max-width: 240px;
+/* THE RIBBON: a glowing trace, wherever a clip is playing.
+
+   Nine copies of one line at different amplitudes, each crossing at its own
+   speed so they fan apart and gather again. The glow is one drop-shadow on the
+   group rather than nine on the lanes - a filter is a per-frame repaint and
+   there is no sense paying for it nine times over.
+
+   Only translateX is animated, so every frame is the compositor sliding layers
+   it already has. Nothing here reflows. */
+.ribbon {
+  position: relative; width: 100%;
+  /* Fade both ends rather than stopping dead, so the trace arrives from
+     somewhere and leaves for somewhere. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
 }
-.wave i {
-  display: block; flex: 1 1 3px; max-width: 4px; height: 100%;
-  border-radius: 2px; background: var(--accent);
-  transform: scaleY(.16); transform-origin: center;
-  animation: waveBar 1.15s var(--ease) infinite;
+.ribbon.sm { height: 56px; }
+.ribbon.lg { height: clamp(78px, 13vh, 160px); margin: 4px 0 2px; }
+.rib-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+.rib-lanes {
+  stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 7px rgba(140, 110, 255, .85));
 }
-@keyframes waveBar {
-  0%, 100% { transform: scaleY(.16) }
-  50%      { transform: scaleY(1) }
+.ribbon.sm .rib-lanes { stroke-width: 4; filter: drop-shadow(0 0 5px rgba(140, 110, 255, .8)); }
+
+.rib-lane {
+  animation-name: ribDrift;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
 }
+/* One whole viewBox, which is four whole periods of the trace - so the slide
+   lands exactly where it started and the loop has no seam. */
+@keyframes ribDrift { to { transform: translateX(-1200px) } }
+
+/* A soft bloom behind it. A static gradient costs nothing per frame, and does
+   most of the work that a heavier blur on the lines would have done. */
+.ribbon::before {
+  content: ''; position: absolute; inset: -14% 6%;
+  background: radial-gradient(58% 72% at 50% 50%, rgba(124, 92, 255, .34), transparent 72%);
+  pointer-events: none;
+}
+
+/* THE NOW-PLAYING CARD: the big screen, while a clip runs.
+
+   The browser's own audio bar is a grey pill built for a webpage; this is a
+   stage. Trace, button, and how far through - at ten paces that is all anybody
+   reads, and there is deliberately no title, because the file is very often
+   named after the answer. */
+/* Dark whatever the rest of the app is doing, and unapologetic about it.
+   A trace like this is light emitted, not ink laid down - on a pale card it is
+   a pencil sketch. Every music player worth the name is dark for the same
+   reason, and on a projector in a room with the lights down it is the only
+   thing that reads. */
+.np {
+  width: 100%; max-width: 900px; margin: 0 auto;
+  padding: clamp(14px, 2vh, 26px) clamp(16px, 2.4vw, 32px);
+  border-radius: var(--r-xl);
+  background:
+    radial-gradient(120% 140% at 15% 0%, rgba(96, 74, 220, .34), transparent 62%),
+    linear-gradient(158deg, #191c33 0%, #0c0e1a 58%, #15122b 100%);
+  border: 1px solid rgba(255, 255, 255, .09);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .28);
+}
+/* Still until it is running: a trace that dances with nothing playing is a
+   lie, and it saves the compositor the work on every idle slide. */
+.np .rib-lane { animation-play-state: paused; }
+.np.playing .rib-lane { animation-play-state: running; }
+
+.np-bar {
+  display: flex; align-items: center;
+  gap: clamp(14px, 1.6vw, 24px); margin-top: clamp(10px, 1.4vh, 18px);
+}
+.np-play {
+  flex: 0 0 auto; display: grid; place-items: center;
+  width: clamp(52px, 5vw, 72px); height: clamp(52px, 5vw, 72px);
+  border: 0; border-radius: 50%; cursor: pointer;
+  background: #fff; color: #0c0e1a;
+  transition: transform .18s var(--ease-out);
+}
+.np-play:hover { transform: scale(1.06); }
+.np-play:active { transform: scale(.97); }
+.np-play:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.np-glyph { display: block; width: 45%; height: 45%; }
+.np-glyph svg { display: block; width: 100%; height: 100%; }
+
+.np-track { flex: 1 1 auto; display: flex; align-items: center; gap: 14px; min-width: 0; }
+.np-t {
+  flex: 0 0 auto; font-variant-numeric: tabular-nums;
+  font-size: clamp(14px, 1.3vw, 20px); font-weight: 550;
+  color: rgba(255, 255, 255, .66);
+}
+
+/* The scrubber is a real range input - it seeks, it takes arrow keys, and a
+   screen reader knows what it is. Only its skin is ours. */
+.np-seek {
+  flex: 1 1 auto; min-width: 0; -webkit-appearance: none; appearance: none;
+  height: 22px; margin: 0; background: transparent; cursor: pointer;
+  --played: 0%;
+}
+.np-seek::-webkit-slider-runnable-track {
+  height: 7px; border-radius: 4px;
+  background: linear-gradient(90deg, #fff var(--played), rgba(255,255,255,.22) var(--played));
+}
+.np-seek::-moz-range-track {
+  height: 7px; border-radius: 4px;
+  background: linear-gradient(90deg, #fff var(--played), rgba(255,255,255,.22) var(--played));
+}
+.np-seek::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 17px; height: 17px; margin-top: -5px; border-radius: 50%;
+  background: #fff; border: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
+.np-seek::-moz-range-thumb {
+  width: 17px; height: 17px; border-radius: 50%;
+  background: #fff; border: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
+.np-seek:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 
 .play-number { font-size: 26px; text-align: center; min-height: 64px; font-variant-numeric: tabular-nums; }
 .play-foot { margin-top: auto; padding-top: 24px; color: var(--ink-3); font-size: 15px; }
@@ -1967,8 +2077,7 @@ html.dark .play-wave-track.back { opacity: .075; }
      bars stop too, but frozen at different heights so the row still reads as
      a waveform rather than a picket fence. */
   .play-wave-track { animation: none; }
-  .wave i { animation: none; }
-  .wave i:nth-child(3n)   { transform: scaleY(.85); }
-  .wave i:nth-child(3n+1) { transform: scaleY(.4); }
-  .wave i:nth-child(3n+2) { transform: scaleY(.62); }
+  /* The trace stays - it is a picture of a sound, and it says so standing
+     still. It just stops sliding. */
+  .rib-lane { animation: none; }
 }

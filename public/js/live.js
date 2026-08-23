@@ -12,8 +12,22 @@
   Live.isRunning = function () { return !!(QC.state && QC.state.live); };
 
   Live.render = function () {
-    return QC.isMaster() ? presenter() : player();
+    var view = QC.isMaster() ? presenter() : player();
+    /* A clip whose slide has gone stops. Detaching an <audio> from the page
+       does not pause it in Chrome, and this one is cached on purpose so that a
+       redraw does not restart it - which means it outlives its own slide
+       unless somebody says otherwise. Next frame, once the swap has happened,
+       anything no longer on the page is hushed. */
+    requestAnimationFrame(hushDetachedAudio);
+    return view;
   };
+
+  function hushDetachedAudio() {
+    Object.keys(audioCache).forEach(function (url) {
+      var a = audioCache[url];
+      if (!a.isConnected && !a.paused) a.pause();
+    });
+  }
 
   function quiz() { return QC.state.upcoming.quiz; }
   function live() { return QC.state.live; }
@@ -51,11 +65,100 @@
       return el('div' + cls, [el('img', { src: url, alt: m.name || '' })]);
     }
 
-    var node = el(m.kind === 'audio' ? 'audio' : 'video', {
-      src: url, controls: true, preload: 'auto', playsinline: true
-    });
-    return el('div' + cls + '.' + m.kind, [node]);
+    if (m.kind === 'audio') return el('div' + cls + '.audio', [nowPlaying(url)]);
+
+    return el('div' + cls + '.video', [
+      el('video', { src: url, controls: true, preload: 'auto', playsinline: true })
+    ]);
   }
+
+  /* A playing clip, on the big screen.
+
+     The browser's own audio bar is a grey pill built for a webpage, and this
+     is a stage. So: the trace, a play button, and how far through it is - the
+     shape every music player has settled on, because at ten paces it is the
+     only part anybody reads.
+
+     Deliberately no title anywhere. The file is called whatever the quiz maker
+     saved it as, and that is very often the answer. */
+  var audioCache = {};
+
+  function nowPlaying(url) {
+    /* The same element every time this slide is drawn. A fresh <audio> would
+       start the clip again from nought the moment anybody's phone reconnected,
+       which on a slide the room is listening to is the whole ballgame. */
+    var audio = audioCache[url];
+    if (!audio) {
+      audio = el('audio', { src: url, preload: 'auto' });
+      audioCache[url] = audio;
+    }
+
+    var card = el('div.np');
+    var icon = el('button.np-play', {
+      type: 'button', 'aria-label': 'Play the clip',
+      onclick: function () {
+        if (audio.paused) audio.play().catch(function () {}); else audio.pause();
+      }
+    }, [el('span.np-glyph', { html: PLAY_ICON })]);
+
+    var seek = el('input.np-seek', {
+      type: 'range', min: '0', max: '1000', value: '0',
+      'aria-label': 'Position in the clip'
+    });
+    var elapsed = el('span.np-t', { text: '0:00' });
+    var total = el('span.np-t', { text: '0:00' });
+
+    var paint = function () {
+      var d = audio.duration;
+      var frac = d ? audio.currentTime / d : 0;
+      seek.value = String(Math.round(frac * 1000));
+      // The filled part of the track is drawn from this, so it has to be set
+      // rather than left to the browser's own progress styling.
+      seek.style.setProperty('--played', (frac * 100).toFixed(2) + '%');
+      elapsed.textContent = clock(audio.currentTime);
+      if (d) total.textContent = clock(d);
+    };
+    var mark = function () {
+      var on = !audio.paused && !audio.ended;
+      card.classList.toggle('playing', on);
+      icon.setAttribute('aria-label', on ? 'Pause the clip' : 'Play the clip');
+      icon.firstChild.innerHTML = on ? PAUSE_ICON : PLAY_ICON;
+    };
+
+    audio.ontimeupdate = paint;
+    audio.onloadedmetadata = paint;
+    audio.onplay = mark;
+    audio.onpause = mark;
+    audio.onended = mark;
+    seek.oninput = function () {
+      if (audio.duration) audio.currentTime = (seek.value / 1000) * audio.duration;
+    };
+
+    QC.append(card, [
+      ribbon('lg'),
+      el('div.np-bar', [
+        icon,
+        el('div.np-track', [elapsed, seek, total])
+      ]),
+      audio
+    ]);
+    paint(); mark();
+    return card;
+  }
+
+  // m:ss, and h:mm:ss only if a quiz maker really has dropped in an hour of it.
+  function clock(secs) {
+    if (!isFinite(secs) || secs < 0) secs = 0;
+    var s = Math.floor(secs % 60), m = Math.floor(secs / 60) % 60, h = Math.floor(secs / 3600);
+    var mm = h ? (m < 10 ? '0' + m : m) : m;
+    return (h ? h + ':' : '') + mm + ':' + (s < 10 ? '0' + s : s);
+  }
+
+  var PLAY_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+    + '<path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.1-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14z"/></svg>';
+  var PAUSE_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
+    + '<rect x="6" y="4.5" width="4.2" height="15" rx="1.4"/>'
+    + '<rect x="13.8" y="4.5" width="4.2" height="15" rx="1.4"/></svg>';
 
   /* On a player's own device. Pictures are needed to answer, but a roomful of
      them playing the same clip a half-second apart would be chaos, so sound and
@@ -75,24 +178,101 @@
        so it looks the same on every handset instead of whatever that phone
        happens to ship for an emoji. */
     return el('div.play-media-note', [
-      waveBars(),
+      ribbon('sm'),
       el('span', { text: m.kind === 'audio'
         ? 'Listen to the big screen' : 'Watch the big screen' })
     ]);
   }
 
-  /* The bars themselves. Staggered rather than random: each one starts a beat
-     after the one before it, so the crest travels along the row instead of the
-     whole thing flashing at once. The stagger overruns the cycle on purpose,
-     which puts about one and a half waves on screen at a time. */
-  var WAVE_BARS = 22;
+  /* THE RIBBON: a glowing oscilloscope trace, for wherever a clip is playing.
 
-  function waveBars() {
-    var bars = [];
-    for (var i = 0; i < WAVE_BARS; i++) {
-      bars.push(el('i', { style: { animationDelay: (i * 68) + 'ms' } }));
+     Built the way the real thing looks: not one line but a stack of them, the
+     same trace at different amplitudes, sliding over each other at slightly
+     different speeds. They fan apart and close up again as they drift, which
+     is what gives the contoured, layered look - a single line just slides past
+     and reads as wallpaper.
+
+     One path, drawn once, used nine times. `<use>` costs a reference where
+     nine separate paths would cost nine sets of point data, and the player
+     view is rebuilt on every push - so this markup is generated once when the
+     file loads and stamped in from a string after that.
+
+     The shape is a sum of three harmonics of one fundamental, which is what
+     makes it look like a signal rather than a sine, and what makes it repeat
+     exactly: every component completes a whole number of cycles per period, so
+     sliding by a whole period is seamless. */
+
+  var RIB_W = 1200;          // the viewBox, one screen wide
+  var RIB_MID = 100;         // the centre line
+  var RIB_PERIOD = 300;      // 4 of them across the viewBox
+  var RIB_LANES = 9;
+
+  function ribbonTrace() {
+    var pts = [];
+    // Twice the viewBox wide, so a slide of one whole viewBox still covers it.
+    for (var x = 0; x <= RIB_W * 2; x += 8) {
+      var t = (x / RIB_PERIOD) * Math.PI * 2;
+      var y = Math.sin(t) * 40
+            + Math.sin(t * 2 + 1.1) * 17
+            + Math.sin(t * 3 + 2.4) * 9
+            + Math.sin(t * 5 + 0.6) * 4;
+      pts.push(x + ',' + (RIB_MID + y).toFixed(1));
     }
-    return el('div.wave', { 'aria-hidden': 'true' }, bars);
+    return 'M' + pts.join('L');
+  }
+
+  /* Ids have to be unique per document or the second ribbon on a page would
+     borrow the first one's gradient. Only one is ever on screen at a time, but
+     that is a fact about today's slides, not a property of the markup. */
+  var ribCount = 0;
+
+  function buildRibbon() {
+    var n = ++ribCount;
+    var ink = 'ribInk' + n, path = 'ribPath' + n;
+    var out = '<svg class="rib-svg" viewBox="0 0 ' + RIB_W + ' ' + (RIB_MID * 2) + '" '
+            + 'preserveAspectRatio="none" aria-hidden="true" focusable="false">'
+            + '<defs>'
+            /* Two colour cycles across the path. The path is twice the
+               viewBox wide, so one cycle would only ever show half its range
+               through the window - blue to violet, and never the pink. */
+            + '<linearGradient id="' + ink + '" x1="0" y1="0" x2="1" y2="0">'
+            + '<stop offset="0" stop-color="#2f6bff"/>'
+            + '<stop offset="0.15" stop-color="#6f5cff"/>'
+            + '<stop offset="0.28" stop-color="#b44cff"/>'
+            + '<stop offset="0.4" stop-color="#ff4fa3"/>'
+            + '<stop offset="0.5" stop-color="#2f6bff"/>'
+            + '<stop offset="0.65" stop-color="#6f5cff"/>'
+            + '<stop offset="0.78" stop-color="#b44cff"/>'
+            + '<stop offset="0.9" stop-color="#ff4fa3"/>'
+            + '<stop offset="1" stop-color="#2f6bff"/>'
+            + '</linearGradient>'
+            + '<path id="' + path + '" d="' + ribbonTrace() + '"/>'
+            + '</defs>'
+            + '<g class="rib-lanes" stroke="url(#' + ink + ')" fill="none">';
+
+    for (var i = 0; i < RIB_LANES; i++) {
+      /* Amplitude fans out from a hairline in the middle of the stack to the
+         full trace at the edges, so the bundle has a body rather than being
+         nine copies of the same line. */
+      var k = 0.16 + (i / (RIB_LANES - 1)) * 0.84;
+      // Each lane takes its own time to cross, which is what makes them fan.
+      var secs = (7.5 + i * 0.9).toFixed(1);
+      out += '<g transform="translate(0 ' + RIB_MID + ') scale(1 ' + k.toFixed(3)
+           + ') translate(0 -' + RIB_MID + ')">'
+           + '<use class="rib-lane" href="#' + path + '" '
+           + 'style="animation-duration:' + secs + 's;opacity:' + (0.28 + k * 0.5).toFixed(2) + '"/>'
+           + '</g>';
+    }
+    return out + '</g></svg>';
+  }
+
+  /* Stamped from a string rather than rebuilt: the trace is 300 points and the
+     player view is redrawn every time somebody answers. */
+  var RIBBON_HTML = null;
+
+  function ribbon(cls) {
+    if (RIBBON_HTML === null) RIBBON_HTML = buildRibbon();
+    return el('div.ribbon' + (cls ? '.' + cls : ''), { html: RIBBON_HTML });
   }
 
   /* Everyone's tiebreaker guess, closest first. The server only sends these
