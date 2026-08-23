@@ -1121,7 +1121,10 @@
     var movedOn = L.index < (L.asked === undefined ? -1 : L.asked);
     var closed = marked || (movedOn && mine !== undefined);
 
-    return el('div.play', [
+    /* Pictures want a wider column than words do, and the answer is a picture
+       here. Marked on the card so the stylesheet can give it more room where
+       there is room to give - a phone is unaffected either way. */
+    return el('div.play' + (shape === 'pics' ? '.play-pics' : ''), [
       el('div.play-head', [
         el('span.play-step', { text: 'Question ' + (L.index + 1) + ' of ' + L.questionCount }),
         scoreSoFar(L),
@@ -1129,7 +1132,11 @@
       ]),
       el('h2.play-q' + (questionShape(q.text) ? '.' + questionShape(q.text) : ''), { text: q.text }),
       phoneMedia(q.media),
-      el('div.play-opts.opts-' + shape, opts.map(function (o) {
+      /* The same evenness rule the projector uses: three answers go three
+         across rather than two and a stranded one. Only the picture layout
+         reads the count, but it costs nothing to say it either way. */
+      el('div.play-opts.opts-' + shape + '.cols-' + optionColumns(shape, opts.length),
+        opts.map(function (o) {
         return el('button.play-opt' + (mine === o.i ? '.picked' : '')
                   + (closed && mine !== o.i ? '.faded' : ''), {
           type: 'button',

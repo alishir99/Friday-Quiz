@@ -2239,7 +2239,7 @@ html.dark .play-wave-track.back { opacity: .075; }
   padding: 14px 16px; border-bottom: 1px solid var(--line-soft);
 }
 .pv-head h3 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
-.pv-when button { font-size: 12px; padding: 0 10px; min-height: 28px; }
+
 
 .pv-body { padding: 16px; overflow: hidden; }
 
@@ -2288,3 +2288,54 @@ html.dark .play-wave-track.back { opacity: .075; }
   color: var(--ink-2); font-size: 13px; line-height: 1.45;
 }
 .paste-tip b { color: var(--ink); font-weight: 650; }
+
+/* PICTURE OPTIONS ON A PLAYER'S OWN SCREEN.
+
+   The thumbnail is 56px because a phone row has nowhere else to put it. On a
+   laptop that same 56px is a picture nobody can see - and on these questions
+   the picture is the thing being asked about, so it is the one part that must
+   be legible. Given width, the row becomes a card: picture across the top, the
+   letter as a badge on it, the word underneath. The same shape the projector
+   uses, for the same reason.
+
+   Keyed on width rather than on a guess about the device: a phone in landscape
+   gets the roomier layout too, because it has the room. */
+@media (min-width: 640px) {
+  /* Words need a narrow column to stay readable; pictures need a wide one. */
+  .play.play-pics { max-width: 940px; }
+
+  /* Even rows, from the same count the projector uses - auto-fit alone put
+     four answers three across with one stranded underneath. */
+  .play-pics .play-opts.opts-pics { gap: 16px; }
+  .play-pics .play-opts.opts-pics.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .play-pics .play-opts.opts-pics.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .play-pics .play-opts.opts-pics.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .play-pics .play-opts.opts-pics .play-opt {
+    flex-direction: column; align-items: stretch; text-align: center;
+    gap: 0; padding: 0; overflow: hidden; position: relative;
+    min-height: 0;
+  }
+  /* As big as its share of the row allows, capped so four of them still fit
+     on screen together. height auto keeps the picture's own proportions. */
+  .play-pics .play-opts.opts-pics .opt-pic {
+    width: 100%; height: auto; max-height: 34vh;
+    object-fit: contain; border-radius: 0; border: 0;
+  }
+  .play-pics .play-opts.opts-pics .k {
+    position: absolute; top: 10px; left: 10px; z-index: 1;
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+  }
+  .play-pics .play-opts.opts-pics .t {
+    flex: 0 0 auto; padding: 12px 14px; font-size: 17px;
+  }
+  /* The tick moves opposite the letter rather than trailing the text. */
+  .play-pics .play-opts.opts-pics .tick {
+    position: absolute; top: 10px; right: 12px; z-index: 1;
+  }
+  /* Same reason as the projector: the badge rules below are more specific than
+     the picked/right ones, so the state has to be restated here. */
+  .play-pics .play-opts.opts-pics .play-opt.picked .k { background: var(--accent); color: #fff; }
+  .play-pics .play-opts.opts-pics .play-opt.right .k { background: var(--good); color: #fff; }
+}

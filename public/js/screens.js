@@ -1094,7 +1094,8 @@
       QC.append(previewSettings, [
         q.media ? sizeControl(q) : null,
         hasOptionPics ? optPicControl(q) : null,
-        arrangeControl(q)
+        arrangeControl(q),
+        whichSlideControl()
       ]);
     }
 
@@ -1187,28 +1188,29 @@
        has finished moving rather than one mid-gesture. */
     var drawPreviewSoon = debounce(function () { drawPreview(); }, 250);
 
+    /* Which of the two slides this question makes is being previewed. Down
+       with the other settings rather than up in the header: it is the same
+       kind of thing as the answer arrangement - a choice about the slide - and
+       it was the odd one out sat in the title bar. */
+    function whichSlideControl() {
+      var seg = el('div.seg', [
+        el('button', { type: 'button', text: 'Question', class: previewReveal ? '' : 'on' }),
+        el('button', { type: 'button', text: 'Answer', class: previewReveal ? 'on' : '' })
+      ]);
+      seg.addEventListener('click', function (e) {
+        if (e.target.tagName !== 'BUTTON') return;
+        previewReveal = e.target.textContent === 'Answer';
+        drawPreview();
+      });
+      return el('div.pv-field', [el('label', { text: 'Previewing' }), seg]);
+    }
+
     function previewDock() {
       previewBody = el('div.pv-body');
       previewSettings = el('div.pv-settings');
 
-      var toggle = el('div.seg.pv-when', [
-        el('button', { type: 'button', text: 'Question', class: previewReveal ? '' : 'on',
-          onclick: function () { previewReveal = false; drawPreview(); } }),
-        el('button', { type: 'button', text: 'Answer', class: previewReveal ? 'on' : '',
-          onclick: function () { previewReveal = true; drawPreview(); } })
-      ]);
-      toggle.addEventListener('click', function (e) {
-        if (e.target.tagName !== 'BUTTON') return;
-        [].forEach.call(toggle.children, function (b) { b.classList.remove('on'); });
-        e.target.classList.add('on');
-      });
-
       var dock = el('aside.preview-dock', [
-        el('div.pv-head', [
-          el('h3', { text: 'On the big screen' }),
-          el('div.spacer'),
-          toggle
-        ]),
+        el('div.pv-head', [el('h3', { text: 'On the big screen' })]),
         previewBody,
         previewSettings
       ]);
