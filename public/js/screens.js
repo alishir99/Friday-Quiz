@@ -1066,7 +1066,35 @@
         return;
       }
 
-      var slide = QC.live.previewSlide(q, open, quiz.questions.length, previewReveal);
+      /* Both slides, one above the other. Every question makes two - the one
+         with the answers hidden and the one with the right one lit - and a
+         tab between them meant only ever seeing half of what was being
+         changed. Stacked, one glance covers both. */
+      /* The picture's size sits between the two previews rather than down with
+         the rest: below the question it belongs to, above the answer slide it
+         is not about. A slider in a block at the bottom of the panel could
+         have meant either of them. */
+      QC.append(previewBody, [
+        shotOf(q, false, 'Question'),
+        q.media ? sizeControl(q) : null,
+        shotOf(q, true, 'Answer')
+      ]);
+      /* Sized now rather than next frame. They are in the panel at this point,
+         so the width is known - and waiting left a window where the CSS
+         fallback scale showed instead, which is a slide drawn far too big. */
+      [].forEach.call(previewBody.querySelectorAll('.preview-shot'), scalePreview);
+      fitPreview();
+
+      var hasOptionPics = (q.optionMedia || []).some(function (m) { return m && m.kind === 'image'; });
+      QC.append(previewSettings, [
+        hasOptionPics ? optPicControl(q) : null,
+        arrangeControl(q)
+      ]);
+    }
+
+    /* One slide, captioned, scaled into the panel. */
+    function shotOf(q, reveal, caption) {
+      var slide = QC.live.previewSlide(q, open, quiz.questions.length, reveal);
       /* Frame inside a stage, the same nesting the projector uses. The frame
          sits inset from the screen edge by a margin of its own, so scaling the
          frame alone put that margin outside the miniature - the slide started
@@ -1075,9 +1103,7 @@
       var shot = el('div.preview-shot', [
         el('div.preview-stage', [el('div.slide-frame', slide)])
       ]);
-      QC.append(previewBody, shot);
-      scalePreview(shot);
-      fitPreview();
+      var wrap = el('div.pv-one', [el('div.pv-cap', { text: caption }), shot]);
       /* A picture arriving late makes the slide taller after it was measured,
          and the first fit runs before it has loaded - so measure again when it
          does. The projector has the same listener; this one is the preview's,
@@ -1089,14 +1115,7 @@
         m.addEventListener('load', fitPreview);
         m.addEventListener('loadedmetadata', fitPreview);
       });
-
-      var hasOptionPics = (q.optionMedia || []).some(function (m) { return m && m.kind === 'image'; });
-      QC.append(previewSettings, [
-        q.media ? sizeControl(q) : null,
-        hasOptionPics ? optPicControl(q) : null,
-        arrangeControl(q),
-        whichSlideControl()
-      ]);
+      return wrap;
     }
 
     /* Shrink the slide until all of it is inside its frame - the same sum the
@@ -1104,8 +1123,8 @@
        that has actually been laid out. */
     function fitPreview() {
       requestAnimationFrame(function () {
-        var slide = previewBody && previewBody.querySelector('.slide');
-        if (slide) QC.live.fitInto(slide);
+        if (!previewBody) return;
+        [].forEach.call(previewBody.querySelectorAll('.preview-shot .slide'), QC.live.fitInto);
       });
     }
 
@@ -1138,8 +1157,9 @@
         read.textContent = slider.value + '%';
         // Move the picture in the preview without rebuilding the whole slide -
         // dragging a slider that redraws on every pixel is a slideshow.
-        var box = previewBody.querySelector('.s-media');
-        if (box) box.style.setProperty('--pic', q.mediaSize + 'vh');
+        [].forEach.call(previewBody.querySelectorAll('.s-media'), function (box) {
+          box.style.setProperty('--pic', q.mediaSize + 'vh');
+        });
         fitPreview();          // a taller picture may push the answers out
         saveSoon();
         drawPreviewSoon();     // and settle it properly once the drag pauses
@@ -1162,8 +1182,9 @@
       slider.addEventListener('input', function () {
         q.optionPicSize = Number(slider.value);
         read.textContent = slider.value + '%';
-        var row = previewBody.querySelector('.s-opts');
-        if (row) row.style.setProperty('--opt-pic', q.optionPicSize + 'vh');
+        [].forEach.call(previewBody.querySelectorAll('.s-opts'), function (row) {
+          row.style.setProperty('--opt-pic', q.optionPicSize + 'vh');
+        });
         fitPreview();
         saveSoon();
         drawPreviewSoon();
@@ -1183,34 +1204,16 @@
       return el('div.pv-field', [el('label', { text: 'Answers' }), seg]);
     }
 
-    var previewReveal = false;
     /* Redrawn once the drag stops, so the fit is measured against a slide that
        has finished moving rather than one mid-gesture. */
     var drawPreviewSoon = debounce(function () { drawPreview(); }, 250);
-
-    /* Which of the two slides this question makes is being previewed. Down
-       with the other settings rather than up in the header: it is the same
-       kind of thing as the answer arrangement - a choice about the slide - and
-       it was the odd one out sat in the title bar. */
-    function whichSlideControl() {
-      var seg = el('div.seg', [
-        el('button', { type: 'button', text: 'Question', class: previewReveal ? '' : 'on' }),
-        el('button', { type: 'button', text: 'Answer', class: previewReveal ? 'on' : '' })
-      ]);
-      seg.addEventListener('click', function (e) {
-        if (e.target.tagName !== 'BUTTON') return;
-        previewReveal = e.target.textContent === 'Answer';
-        drawPreview();
-      });
-      return el('div.pv-field', [el('label', { text: 'Previewing' }), seg]);
-    }
 
     function previewDock() {
       previewBody = el('div.pv-body');
       previewSettings = el('div.pv-settings');
 
       var dock = el('aside.preview-dock', [
-        el('div.pv-head', [el('h3', { text: 'On the big screen' })]),
+        el('div.pv-head', [el('h3', { text: 'Slide settings' })]),
         previewBody,
         previewSettings
       ]);
@@ -1218,8 +1221,9 @@
       drawPreview();
       // The miniature is a fraction of the window, so it has to be remeasured.
       window.addEventListener('resize', function () {
-        var shot = previewBody && previewBody.querySelector('.preview-shot');
-        if (shot) scalePreview(shot);
+        if (!previewBody) return;
+        [].forEach.call(previewBody.querySelectorAll('.preview-shot'), scalePreview);
+        fitPreview();
       });
       return dock;
     }

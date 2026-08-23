@@ -2241,7 +2241,15 @@ html.dark .play-wave-track.back { opacity: .075; }
 .pv-head h3 { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
 
 
-.pv-body { padding: 16px; overflow: hidden; }
+.pv-body { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.pv-one { display: flex; flex-direction: column; gap: 6px; }
+/* The picture's slider, sat between the two previews. Indented a touch so it
+   reads as belonging to the question above rather than floating between. */
+.pv-body > .pv-field { padding: 2px 2px 4px; }
+.pv-cap {
+  font-size: 11px; font-weight: 650; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-3);
+}
 
 /* The slide is laid out at the full size of this window and then shrunk, so
    the proportions are the ones the projector will show. Scaling, not a smaller
