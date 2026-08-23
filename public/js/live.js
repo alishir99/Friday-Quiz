@@ -68,11 +68,31 @@
     if (m.kind === 'image') {
       return el('img.play-media', { src: url, alt: m.name || '' });
     }
+    /* A clip is running on the projector and not on this phone, so all this
+       screen can do is point at it. A row of bars rising and falling says
+       "something is playing over there" the moment you glance down, where a
+       loudspeaker glyph just sits there - and it is drawn rather than typed,
+       so it looks the same on every handset instead of whatever that phone
+       happens to ship for an emoji. */
     return el('div.play-media-note', [
-      el('span.icon', { text: m.kind === 'audio' ? '🔊' : '📺' }),
+      waveBars(),
       el('span', { text: m.kind === 'audio'
         ? 'Listen to the big screen' : 'Watch the big screen' })
     ]);
+  }
+
+  /* The bars themselves. Staggered rather than random: each one starts a beat
+     after the one before it, so the crest travels along the row instead of the
+     whole thing flashing at once. The stagger overruns the cycle on purpose,
+     which puts about one and a half waves on screen at a time. */
+  var WAVE_BARS = 22;
+
+  function waveBars() {
+    var bars = [];
+    for (var i = 0; i < WAVE_BARS; i++) {
+      bars.push(el('i', { style: { animationDelay: (i * 68) + 'ms' } }));
+    }
+    return el('div.wave', { 'aria-hidden': 'true' }, bars);
   }
 
   /* Everyone's tiebreaker guess, closest first. The server only sends these

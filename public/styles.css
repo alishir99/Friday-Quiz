@@ -1418,13 +1418,31 @@ audio.media-player { height: 44px; }
   object-fit: contain; border-radius: var(--r);
   margin-top: 16px; background: var(--surface-2);
 }
+/* Something is playing on the projector, and this phone can only say so. */
 .play-media-note {
-  display: flex; align-items: center; justify-content: center; gap: 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
   margin-top: 16px; padding: 20px;
   border: 1px dashed var(--line); border-radius: var(--r);
   color: var(--ink-2); font-size: 17px; font-weight: 500;
 }
-.play-media-note .icon { font-size: 26px; }
+
+/* The bars. scaleY rather than height: it is the difference between the
+   compositor moving pixels it already has and the browser re-laying out
+   twenty-two elements sixty times a second. */
+.wave {
+  display: flex; align-items: center; justify-content: center;
+  gap: 3px; height: 34px; width: 100%; max-width: 240px;
+}
+.wave i {
+  display: block; flex: 1 1 3px; max-width: 4px; height: 100%;
+  border-radius: 2px; background: var(--accent);
+  transform: scaleY(.16); transform-origin: center;
+  animation: waveBar 1.15s var(--ease) infinite;
+}
+@keyframes waveBar {
+  0%, 100% { transform: scaleY(.16) }
+  50%      { transform: scaleY(1) }
+}
 
 .play-number { font-size: 26px; text-align: center; min-height: 64px; font-variant-numeric: tabular-nums; }
 .play-foot { margin-top: auto; padding-top: 24px; color: var(--ink-3); font-size: 15px; }
@@ -1897,4 +1915,60 @@ audio.media-player { height: 44px; }
     animation-delay: 0s; animation-duration: .2s;
   }
   .coin-flip:hover { transform: none; }
+}
+
+/* THE AMBIENT WAVE: a player's screen, breathing, while the quiz is on.
+
+   Decoration, and honest about it - so it is inert to taps, sits behind
+   everything, and is the first thing to go when someone has asked for less
+   motion. Only on a player's own device: the big screen has a slide to look
+   at and does not need weather.
+
+   The outer box is fixed and clipped so a track twice the width of the screen
+   cannot make the page scroll sideways - which on this app is a bug the body
+   already guards against, and one worth not re-introducing here. */
+.play-wave { display: none; }
+body.playing:not(.presenting) .play-wave {
+  display: block;
+  position: fixed; left: 0; right: 0; bottom: 0;
+  height: clamp(86px, 17vh, 168px);
+  overflow: hidden; pointer-events: none;
+  z-index: 0; color: var(--accent);
+}
+/* Content sits above it. Without this the wave would wash over the answers. */
+.play { position: relative; z-index: 1; }
+
+.play-wave-track {
+  position: absolute; left: 0; bottom: 0; width: 200%; height: 100%;
+  opacity: .085;
+  animation: waveDrift 19s linear infinite;
+}
+.play-wave-track.back {
+  opacity: .05;
+  animation-duration: 27s; animation-direction: reverse;
+}
+.play-wave-track svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+/* Half the track is a whole number of wavelengths, so the loop has no seam. */
+@keyframes waveDrift { to { transform: translateX(-50%) } }
+
+/* Dark mode: the accent is brighter and the ground is black, so the same
+   opacity reads as a much louder wave. Bring it down to match. */
+:root[data-theme="dark"] .play-wave-track,
+html.dark .play-wave-track { opacity: .13; }
+:root[data-theme="dark"] .play-wave-track.back,
+html.dark .play-wave-track.back { opacity: .075; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .play-wave-track { opacity: .13; }
+  :root:not([data-theme="light"]) .play-wave-track.back { opacity: .075; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The wave stays - it is scenery, and scenery does not have to move. The
+     bars stop too, but frozen at different heights so the row still reads as
+     a waveform rather than a picket fence. */
+  .play-wave-track { animation: none; }
+  .wave i { animation: none; }
+  .wave i:nth-child(3n)   { transform: scaleY(.85); }
+  .wave i:nth-child(3n+1) { transform: scaleY(.4); }
+  .wave i:nth-child(3n+2) { transform: scaleY(.62); }
 }

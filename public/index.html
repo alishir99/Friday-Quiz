@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Friday Quiz</title>
 <meta name="color-scheme" content="light dark">
-<link rel="stylesheet" href="styles.css?v=64">
+<link rel="stylesheet" href="styles.css?v=65">
 <script>
 /* Light unless this browser was told otherwise. Set before the first paint so
    nobody sees the wrong theme flash past. Key matches THEME_KEY in store.js. */
@@ -45,12 +45,33 @@ try {
 <div class="sheet-host" id="sheetHost" hidden></div>
 <div class="toasts" id="toasts"></div>
 
-<script src="js/qrcode.js?v=28"></script>
-<script src="js/store.js?v=28"></script>
-<script src="js/ui.js?v=28"></script>
-<script src="js/net.js?v=28"></script>
-<script src="js/screens.js?v=28"></script>
-<script src="js/live.js?v=28"></script>
-<script src="js/app.js?v=28"></script>
+<!-- A slow swell along the bottom of a player's screen for as long as the quiz
+     is running. It lives here rather than inside the view because the player
+     view is rebuilt on every push - an ambient animation that restarts forty
+     times a night is not ambient. Inert to taps, never shown on the big
+     screen, and CSS decides when it appears. Two layers drifting at different
+     speeds and in opposite directions: one alone reads as a sliding picture,
+     two read as water. The path repeats every 360 units and the track is
+     twice the screen wide, so a shift of exactly half of it loops seamlessly. -->
+<div class="play-wave" aria-hidden="true">
+  <div class="play-wave-track back">
+    <svg viewBox="0 0 1440 160" preserveAspectRatio="none">
+      <path d="M0,86 q90,-34 180,0 t180,0 t180,0 t180,0 t180,0 t180,0 t180,0 t180,0 V160 H0 Z"/>
+    </svg>
+  </div>
+  <div class="play-wave-track">
+    <svg viewBox="0 0 1440 160" preserveAspectRatio="none">
+      <path d="M0,104 q90,-44 180,0 t180,0 t180,0 t180,0 t180,0 t180,0 t180,0 t180,0 V160 H0 Z"/>
+    </svg>
+  </div>
+</div>
+
+<script src="js/qrcode.js?v=29"></script>
+<script src="js/store.js?v=29"></script>
+<script src="js/ui.js?v=29"></script>
+<script src="js/net.js?v=29"></script>
+<script src="js/screens.js?v=29"></script>
+<script src="js/live.js?v=29"></script>
+<script src="js/app.js?v=29"></script>
 </body>
 </html>
