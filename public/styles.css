@@ -1500,10 +1500,14 @@ audio.media-player { height: 44px; }
 
 /* Media on a phone */
 
+/* No background: the element is as wide as the card and object-fit letterboxes
+   the picture inside it, so a filled background paints every part of that box
+   the picture does not cover - grey slabs either side of anything that is not
+   the shape of the card. Same fix as the projector's. */
 .play-media {
   display: block; width: 100%; max-height: 38vh;
   object-fit: contain; border-radius: var(--r);
-  margin-top: 16px; background: var(--surface-2);
+  margin-top: 16px;
 }
 /* Something is playing on the projector, and this phone can only say so. The
    same surface as the big screen's card, so the two screens plainly show the
@@ -2284,6 +2288,13 @@ html.dark .play-wave-track.back { opacity: .075; }
   font-size: 12px; font-weight: 650; letter-spacing: .05em;
   text-transform: uppercase; color: var(--ink-3);
 }
+/* A line of plain English under a label that a three-word control cannot
+   carry on its own - "Answers / Auto | In a row | Stacked" reads as a puzzle. */
+.pv-note {
+  display: block; margin: -4px 0 8px;
+  font-size: 12px; line-height: 1.35; color: var(--ink-3);
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+}
 .pv-field .seg { width: 100%; }
 .pv-field .seg button { flex: 1 1 0; font-size: 13px; }
 .pv-field .size-row { margin-top: 0; }
@@ -2346,4 +2357,27 @@ html.dark .play-wave-track.back { opacity: .075; }
      the picked/right ones, so the state has to be restated here. */
   .play-pics .play-opts.opts-pics .play-opt.picked .k { background: var(--accent); color: #fff; }
   .play-pics .play-opts.opts-pics .play-opt.right .k { background: var(--good); color: #fff; }
+}
+
+/* A PLAYER'S SCREEN AS A CANVAS.
+
+   The card used to be a page that scrolled. Once a picture could be dragged
+   large that stopped working: the answers went below the fold, and somebody
+   looking at the first two of four has no idea the other two exist. So the
+   card is held inside a frame the size of the screen and shrunk until all of
+   it fits - the same thing the projector does with a slide, for the same
+   reason.
+
+   dvh, not vh: on a phone vh counts the browser chrome as usable, so the frame
+   would start taller than the screen and push its own bottom out of sight. */
+body.playing:not(.presenting) .play-fit {
+  position: fixed; inset: 0; overflow: hidden;
+  display: flex; flex-direction: column;
+  z-index: 1;
+}
+/* A definite height, so content taller than it counts as overflow and there is
+   something for the fit to measure. min-height alone just grows. */
+body.playing:not(.presenting) .play-fit > .play {
+  height: 100%; min-height: 0;
+  transform-origin: top center;
 }

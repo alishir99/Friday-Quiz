@@ -1165,7 +1165,7 @@
         drawPreviewSoon();     // and settle it properly once the drag pauses
       });
       return el('div.pv-field', [
-        el('label', { text: 'Picture size' }),
+        el('label', { text: 'Picture size in the question' }),
         el('div.size-row', [slider, read])
       ]);
     }
@@ -1190,7 +1190,7 @@
         drawPreviewSoon();
       });
       return el('div.pv-field', [
-        el('label', { text: 'Pictures in the options' }),
+        el('label', { text: 'Picture size in the answer options' }),
         el('div.size-row', [slider, read])
       ]);
     }
@@ -1201,7 +1201,11 @@
         ['row', 'In a row', 'Side by side, for short answers'],
         ['stacked', 'Stacked', 'One per line, for long answers']
       ], drawPreview);
-      return el('div.pv-field', [el('label', { text: 'Answers' }), seg]);
+      return el('div.pv-field', [
+        el('label', { text: 'Answer options layout' }),
+        el('span.pv-note', { text: 'How the answers are arranged on the slide' }),
+        seg
+      ]);
     }
 
     /* Redrawn once the drag stops, so the fit is measured against a slide that

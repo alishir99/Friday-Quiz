@@ -12,15 +12,52 @@
   Live.isRunning = function () { return !!(QC.state && QC.state.live); };
 
   Live.render = function () {
-    var view = QC.isMaster() ? presenter() : player();
+    var master = QC.isMaster();
+    var view = master ? presenter() : player();
     /* A clip whose slide has gone stops. Detaching an <audio> from the page
        does not pause it in Chrome, and this one is cached on purpose so that a
        redraw does not restart it - which means it outlives its own slide
        unless somebody says otherwise. Next frame, once the swap has happened,
        anything no longer on the page is hushed. */
     requestAnimationFrame(hushDetachedAudio);
-    return view;
+    if (master) return view;
+
+    /* A player's screen is a canvas too.
+
+       It used to be an ordinary page that scrolled, which was fine while the
+       biggest thing on it was a line of text. Once the pictures could be
+       dragged up it stopped being fine: a big picture and four answers ran off
+       the bottom, and a player looking at the first two options has no way of
+       knowing there are four - the question is over before they scroll.
+
+       So it gets what the projector gets: a fixed frame, and the card shrunk
+       until all of it is inside. Everything on screen at once, smaller,
+       instead of some of it at full size and the rest below the fold. */
+    var frame = el('div.play-fit', view);
+    requestAnimationFrame(function () { fitPlay(frame); });
+    return frame;
   };
+
+  /* Measured after every picture is in, for the same reason the slide preview
+     is: a picture that has not loaded has no height, so a fit run before it
+     arrives measures a card that is not the one anybody will see. */
+  function fitPlay(frame) {
+    var card = frame.querySelector('.play');
+    if (!card) return;
+    Live.fitInto(card);
+    [].forEach.call(frame.querySelectorAll('img, video'), function (m) {
+      if (m.complete || m.readyState >= 1) return;
+      m.addEventListener('load', function () { Live.fitInto(card); });
+      m.addEventListener('loadedmetadata', function () { Live.fitInto(card); });
+    });
+  }
+
+  /* And again when the window changes shape - a phone turned sideways has a
+     different amount of room and the old sum no longer holds. */
+  window.addEventListener('resize', function () {
+    var frame = document.querySelector('.play-fit');
+    if (frame) Live.fitInto(frame.querySelector('.play'));
+  });
 
   function hushDetachedAudio() {
     Object.keys(audioCache).forEach(function (url) {
