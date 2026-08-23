@@ -998,7 +998,10 @@ test('picture size and answer layout are saved and sent on', async () => {
           mediaSize: 'enormous', optionLayout: 'diagonal' },  // nonsense
         // Written before the size was a number, and must not change shape.
         { id: 'q3', text: 'C?', options: ['a', 'b'], correct: 0, mediaSize: 'fill' },
-        { id: 'q4', text: 'D?', options: ['a', 'b'], correct: 0, mediaSize: 4000 }
+        { id: 'q4', text: 'D?', options: ['a', 'b'], correct: 0, mediaSize: 4000 },
+        // Pictures inside the options are sized separately from the question's.
+        { id: 'q5', text: 'E?', options: ['a', 'b'], correct: 0, optionPicSize: 30 },
+        { id: 'q6', text: 'F?', options: ['a', 'b'], correct: 0, optionPicSize: 'huge' }
       ],
       tieBreaker: { text: 'n?', unit: '', answer: 1 } } }
   });
@@ -1015,6 +1018,9 @@ test('picture size and answer layout are saved and sent on', async () => {
   assert.equal(qs[1].optionLayout, 'auto');
   assert.equal(qs[2].mediaSize, 86, 'an old "fill" still means what it meant');
   assert.equal(qs[3].mediaSize, 90, 'and a silly number is clamped, not obeyed');
+  assert.equal(qs[4].optionPicSize, 30, 'option pictures carry their own size');
+  assert.equal(qs[5].optionPicSize, 18, 'falling back to the default when it is nonsense');
+  assert.equal(qs[0].optionPicSize, 18, 'and a question that never set one still has it');
 
   await call('/api/live/stop', { method: 'POST', as: 'ali' });
 });

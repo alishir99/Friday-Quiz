@@ -1090,8 +1090,10 @@
         m.addEventListener('loadedmetadata', fitPreview);
       });
 
+      var hasOptionPics = (q.optionMedia || []).some(function (m) { return m && m.kind === 'image'; });
       QC.append(previewSettings, [
         q.media ? sizeControl(q) : null,
+        hasOptionPics ? optPicControl(q) : null,
         arrangeControl(q)
       ]);
     }
@@ -1143,6 +1145,30 @@
       });
       return el('div.pv-field', [
         el('label', { text: 'Picture size' }),
+        el('div.size-row', [slider, read])
+      ]);
+    }
+
+    /* Pictures inside the options are their own decision: six of them on one
+       slide want to be small enough that the answers still read as answers,
+       and a single one wants to be seen. Only offered when there is one. */
+    function optPicControl(q) {
+      var read = el('span.size-read', { text: QC.optPicSize(q.optionPicSize) + '%' });
+      var slider = el('input.size-range', {
+        type: 'range', min: String(QC.OPTPIC_MIN), max: String(QC.OPTPIC_MAX), step: '1',
+        value: String(QC.optPicSize(q.optionPicSize)), 'aria-label': 'Size of the pictures in the options'
+      });
+      slider.addEventListener('input', function () {
+        q.optionPicSize = Number(slider.value);
+        read.textContent = slider.value + '%';
+        var row = previewBody.querySelector('.s-opts');
+        if (row) row.style.setProperty('--opt-pic', q.optionPicSize + 'vh');
+        fitPreview();
+        saveSoon();
+        drawPreviewSoon();
+      });
+      return el('div.pv-field', [
+        el('label', { text: 'Pictures in the options' }),
         el('div.size-row', [slider, read])
       ]);
     }

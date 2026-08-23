@@ -861,7 +861,9 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .s-opts.with-media { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .s-opts.with-media > .s-opt { flex-direction: column; text-align: center; gap: 12px; }
 .s-opt .opt-pic {
-  width: 100%; max-height: clamp(120px, 18vh, 260px);
+  /* --opt-pic is what the quiz maker dragged to; the clamp is the old fixed
+     default, kept as the fallback for anything drawn without one. */
+  width: 100%; max-height: var(--opt-pic, clamp(120px, 18vh, 260px));
   object-fit: contain; border-radius: var(--r-md);
 }
 .s-opt .opt-clip { width: 100%; }

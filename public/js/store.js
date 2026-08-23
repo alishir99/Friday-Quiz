@@ -64,6 +64,20 @@
     return LEGACY_PIC[v] || 42;
   };
 
+  /* And the same for a picture sat inside an option. Its own setting, because
+     it is its own decision: six pictures on one slide want to be small enough
+     that the answers still read as answers, and one picture wants to be seen.
+     A share of the screen's height, like the question's. */
+  QC.OPTPIC_MIN = 6;
+  QC.OPTPIC_MAX = 40;
+  QC.OPTPIC_DEFAULT = 18;
+
+  QC.optPicSize = function (v) {
+    var n = Number(v);
+    if (!isFinite(n) || n <= 0) return QC.OPTPIC_DEFAULT;
+    return Math.min(QC.OPTPIC_MAX, Math.max(QC.OPTPIC_MIN, Math.round(n)));
+  };
+
   QC.fmtDate = function (iso, opts) {
     if (!iso) return '';
     var d = new Date(iso + (iso.length === 10 ? 'T12:00:00' : ''));

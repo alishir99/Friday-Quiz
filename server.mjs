@@ -55,6 +55,16 @@ function mediaSize(v) {
   }
   return LEGACY_MEDIA_SIZE[v] || MEDIA_DEFAULT;
 }
+
+/* A picture inside an option, sized separately from the question's. */
+const OPTPIC_MIN = 6, OPTPIC_MAX = 40, OPTPIC_DEFAULT = 18;
+
+function optionPicSize(v) {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return Math.min(OPTPIC_MAX, Math.max(OPTPIC_MIN, Math.round(v)));
+  }
+  return OPTPIC_DEFAULT;
+}
 const OPTION_LAYOUTS = ['auto', 'row', 'stacked'];
 const MAX_OPTIONS = 6;
 
@@ -589,7 +599,7 @@ function blankQuiz(authorId, topic) {
          quiz already in the history keeps working untouched - they simply
          have no optionMedia and nothing tries to draw one. */
       optionMedia: Array.from({ length: DEFAULT_OPTIONS }, () => null),
-      mediaSize: MEDIA_DEFAULT, optionLayout: 'auto',
+      mediaSize: MEDIA_DEFAULT, optionPicSize: OPTPIC_DEFAULT, optionLayout: 'auto',
       correct: null, note: '', media: null
     })),
     tieBreaker: { text: '', answer: null, unit: '', note: '', media: null }
@@ -993,7 +1003,8 @@ function visibleQuiz(quiz, canSeeAnswers, canSeeTopic, revealed, tieRevealed) {
       id: q.id, text: q.text, options: q.options,
       optionMedia: q.optionMedia || null, media: q.media || null,
       // How it should be laid out is not a secret, and the slide needs it.
-      mediaSize: mediaSize(q.mediaSize), optionLayout: q.optionLayout || 'auto'
+      mediaSize: mediaSize(q.mediaSize), optionPicSize: optionPicSize(q.optionPicSize),
+      optionLayout: q.optionLayout || 'auto'
     })),
     tieBreaker: tieRevealed ? { ...quiz.tieBreaker } : {
       text: quiz.tieBreaker.text,
@@ -1692,8 +1703,9 @@ async function api(req, res, path) {
       const src = Array.isArray(q.optionMedia) ? q.optionMedia : [];
       const optionMedia = options.map((_, i) => cleanMedia(team, src[i]));
       const size = mediaSize(q.mediaSize);
+      const optPic = optionPicSize(q.optionPicSize);
       const optionLayout = OPTION_LAYOUTS.includes(q.optionLayout) ? q.optionLayout : 'auto';
-      return { ...q, options, optionMedia, correct, mediaSize: size, optionLayout,
+      return { ...q, options, optionMedia, correct, mediaSize: size, optionPicSize: optPic, optionLayout,
                media: cleanMedia(team, q.media) };
     });
     if (quiz.tieBreaker) quiz.tieBreaker.media = cleanMedia(team, quiz.tieBreaker.media);

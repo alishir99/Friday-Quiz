@@ -818,15 +818,7 @@
       el('div.s-kicker', { text: 'Question ' + (index + 1) + ' of ' + count }),
       el('h2.s-q' + (qShape ? '.' + qShape : ''), { text: q.text }),
       stageMedia(q.media, q.mediaSize),
-      el('div.s-opts.opts-' + shape + '.cols-' + optionColumns(shape, opts.length)
-         + (shape === 'pics' ? '.with-media' : ''), opts.map(function (o) {
-        var cls = reveal ? (o.i === q.correct ? '.right' : '.wrong') : '';
-        return el('div.s-opt' + cls, [
-          el('span.k', { text: KEYS[o.i] }),
-          optionMedia(o.media, true),
-          o.text.trim() ? el('span', { text: o.text }) : null
-        ]);
-      })),
+      optionRow(shape, opts, q, reveal),
       /* No "Answer: A" line. The right option is already lit up green and
          scaled forward - saying it again in words is the slide repeating
          itself. All that is left to add is why, so that is all this is: a
@@ -838,6 +830,23 @@
           ]) : null)
         : foot
     ]);
+  }
+
+  /* The row of options, and the one place an option picture's size is set.
+     On the container rather than each picture: it is one decision for the
+     whole row, and the preview can move it by touching a single element. */
+  function optionRow(shape, opts, q, reveal) {
+    var row = el('div.s-opts.opts-' + shape + '.cols-' + optionColumns(shape, opts.length)
+      + (shape === 'pics' ? '.with-media' : ''), opts.map(function (o) {
+      var cls = reveal ? (o.i === q.correct ? '.right' : '.wrong') : '';
+      return el('div.s-opt' + cls, [
+        el('span.k', { text: KEYS[o.i] }),
+        optionMedia(o.media, true),
+        o.text.trim() ? el('span', { text: o.text }) : null
+      ]);
+    }));
+    row.style.setProperty('--opt-pic', QC.optPicSize(q.optionPicSize) + 'vh');
+    return row;
   }
 
   /* What the editor's preview asks for. `reveal` shows it as the answer slide,
