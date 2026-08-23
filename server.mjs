@@ -2129,13 +2129,49 @@ const server = createServer(async (req, res) => {
     if (!existsSync(file)) return send(res, 404, 'Not found');
     try {
       const buf = await readFile(file);
-      res.writeHead(200, {
+      const headers = {
         'content-type': MEDIA_MIME[m[2]],
-        'content-length': buf.length,
         /* Private, not public: it is now per-session, so a shared cache must
            never hand one team's file to the next person through it. */
-        'cache-control': 'private, max-age=31536000, immutable'
-      });
+        'cache-control': 'private, max-age=31536000, immutable',
+        /* Say that byte ranges are understood. A <video> or <audio> element
+           asks for one, and a player that is told nothing has to fetch the
+           whole file before it will let anybody scrub - which for a clip of
+           any size means the scrubber on the stage does nothing at all. */
+        'accept-ranges': 'bytes'
+      };
+
+      /* One range, which is all a media element ever asks for. Anything odder
+           - several ranges, a suffix range - is answered in full, which is
+         always allowed and is what happened before this existed. */
+      const asked = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || '').trim());
+      if (asked && (asked[1] || asked[2])) {
+        let start, end;
+        if (asked[1] === '') {
+          // bytes=-500 means the last 500, not the first - the one form of
+          // this header where the number is a length rather than a position.
+          start = Math.max(0, buf.length - Number(asked[2]));
+          end = buf.length - 1;
+        } else {
+          start = Number(asked[1]);
+          end = asked[2] === '' ? buf.length - 1 : Number(asked[2]);
+        }
+        end = Math.min(end, buf.length - 1);
+
+        if (start > end || start >= buf.length) {
+          res.writeHead(416, { 'content-range': 'bytes */' + buf.length });
+          return res.end();
+        }
+        const slice = buf.subarray(start, end + 1);
+        res.writeHead(206, {
+          ...headers,
+          'content-length': slice.length,
+          'content-range': 'bytes ' + start + '-' + end + '/' + buf.length
+        });
+        return res.end(slice);
+      }
+
+      res.writeHead(200, { ...headers, 'content-length': buf.length });
       return res.end(buf);
     } catch {
       return send(res, 500, 'Server error');

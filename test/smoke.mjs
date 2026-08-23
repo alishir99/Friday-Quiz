@@ -1121,6 +1121,42 @@ test('holding answers to the end still closes a question once it is past', async
   await call('/api/live/stop', { method: 'POST', as: 'ali' });
 });
 
+/* A <video> or <audio> element asks for byte ranges, and a player told nothing
+   about them has to fetch the whole clip before it will let anybody scrub -
+   which for a clip of any size means the scrubber on the stage does nothing. */
+test('media is served in byte ranges, so a clip can be scrubbed', async () => {
+  const me = (await stateAs('ali')).me;
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: me }, as: 'ali' });
+  const media = await upload('ali', 'abcdefghijklmnopqrstuvwxyz');
+  assert.ok(media, 'uploaded');
+  const url = `/media/${media.id}.jpg`;
+
+  const whole = await fetch(BASE + url, { headers: { cookie: jar.ali } });
+  assert.equal(whole.status, 200);
+  assert.equal(whole.headers.get('accept-ranges'), 'bytes', 'and says so');
+  assert.equal(await whole.text(), 'abcdefghijklmnopqrstuvwxyz');
+
+  const part = await fetch(BASE + url, { headers: { cookie: jar.ali, range: 'bytes=3-7' } });
+  assert.equal(part.status, 206, 'a range gets partial content');
+  assert.equal(part.headers.get('content-range'), 'bytes 3-7/26');
+  assert.equal(await part.text(), 'defgh', 'and exactly those bytes');
+
+  // Open-ended, which is what a media element actually sends first.
+  const open = await fetch(BASE + url, { headers: { cookie: jar.ali, range: 'bytes=20-' } });
+  assert.equal(open.status, 206);
+  assert.equal(await open.text(), 'uvwxyz');
+
+  // A suffix range, and one that runs past the end.
+  const tail = await fetch(BASE + url, { headers: { cookie: jar.ali, range: 'bytes=-4' } });
+  assert.equal(await tail.text(), 'wxyz', 'the last four bytes');
+  const over = await fetch(BASE + url, { headers: { cookie: jar.ali, range: 'bytes=20-999' } });
+  assert.equal(over.status, 206);
+  assert.equal(over.headers.get('content-range'), 'bytes 20-25/26', 'clamped to the end');
+
+  const silly = await fetch(BASE + url, { headers: { cookie: jar.ali, range: 'bytes=999-' } });
+  assert.equal(silly.status, 416, 'past the end is not satisfiable');
+});
+
 /* Fetching a picture from a URL means the server makes a request somebody else
    chose, which is a forgery hole if it is left open: the box would happily
    fetch its own cloud credentials off the link-local metadata address and file
