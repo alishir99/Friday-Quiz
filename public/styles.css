@@ -1886,9 +1886,18 @@ audio.media-player { height: 44px; }
 }
 .play-opts.opts-tight .play-opt { justify-content: center; }
 .play-opts.opts-tight .play-opt .t { flex: 0 1 auto; }
+/* One per line while the card is still a row.
+
+   Two columns here put a 40px letter, a thumbnail and the answer's text into
+   about 190px of phone, and the text is what gave: "Canberra" came out one
+   letter per line, straight down the card. The row needs the whole width until
+   there is enough of it to become a card instead, which is what the wider
+   rules below do. */
 .play-opts.opts-pics {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  display: grid; grid-template-columns: 1fr; gap: 10px;
 }
+/* With the full width to itself the thumbnail can be worth looking at. */
+.play-opts.opts-pics .opt-pic { width: 76px; height: 76px; }
 /* And a single word longer than its column wraps rather than spilling out of
    it - the column can now be narrow, so something has to give. */
 .play-opt .t { overflow-wrap: anywhere; }
