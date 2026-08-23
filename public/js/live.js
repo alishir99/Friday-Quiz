@@ -236,15 +236,20 @@
                viewBox wide, so one cycle would only ever show half its range
                through the window - blue to violet, and never the pink. */
             + '<linearGradient id="' + ink + '" x1="0" y1="0" x2="1" y2="0">'
-            + '<stop offset="0" stop-color="#2f6bff"/>'
-            + '<stop offset="0.15" stop-color="#6f5cff"/>'
-            + '<stop offset="0.28" stop-color="#b44cff"/>'
-            + '<stop offset="0.4" stop-color="#ff4fa3"/>'
-            + '<stop offset="0.5" stop-color="#2f6bff"/>'
-            + '<stop offset="0.65" stop-color="#6f5cff"/>'
-            + '<stop offset="0.78" stop-color="#b44cff"/>'
-            + '<stop offset="0.9" stop-color="#ff4fa3"/>'
-            + '<stop offset="1" stop-color="#2f6bff"/>'
+            /* Classes, not stop-color="var(--rib-a)". The colours have to
+               follow the theme - neon on a dark page washes out to nothing on
+               a white one - but var() inside a presentation attribute has a
+               patchy history in Safari, and Safari is what the room is
+               holding. A class and a stylesheet rule work everywhere. */
+            + '<stop class="rs-a" offset="0"/>'
+            + '<stop class="rs-b" offset="0.15"/>'
+            + '<stop class="rs-c" offset="0.28"/>'
+            + '<stop class="rs-d" offset="0.4"/>'
+            + '<stop class="rs-a" offset="0.5"/>'
+            + '<stop class="rs-b" offset="0.65"/>'
+            + '<stop class="rs-c" offset="0.78"/>'
+            + '<stop class="rs-d" offset="0.9"/>'
+            + '<stop class="rs-a" offset="1"/>'
             + '</linearGradient>'
             + '<path id="' + path + '" d="' + ribbonTrace() + '"/>'
             + '</defs>'
