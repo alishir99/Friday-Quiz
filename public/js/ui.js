@@ -84,6 +84,15 @@
             '<path d="M3 8.4l3.2 3.2L13 4.8" stroke="currentColor" stroke-width="2" ' +
             'stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+  /* The paperclip on a drop zone. An emoji 📎 renders as a fat colour glyph
+     that ignores currentColor, sits at its own baseline, and is a different
+     picture on every OS. Drawn the same way as the rest of this set - one
+     weight, round caps, inherits the colour of whatever it sits in. */
+  QC.paperclip = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+    '<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19' +
+    'a2 2 0 0 1-2.83-2.83l8.49-8.48" stroke="currentColor" stroke-width="1.8" ' +
+    'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
   QC.chev = '<svg width="9" height="14" viewBox="0 0 9 14" fill="none" aria-hidden="true">' +
             '<path d="M1.5 1L7.5 7L1.5 13" stroke="currentColor" stroke-width="2" ' +
             'stroke-linecap="round" stroke-linejoin="round"/></svg>';

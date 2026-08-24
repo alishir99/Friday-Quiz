@@ -184,8 +184,12 @@ async function fetchRemote(rawUrl, hops = 0) {
     redirect: 'manual',
     signal: AbortSignal.timeout(FETCH_TIMEOUT),
     headers: {
-      // Some hosts refuse an unnamed client outright.
-      'user-agent': 'Mozilla/5.0 (compatible; FridayQuiz/1.0)',
+      /* Says what it is. It used to open with a Mozilla token, on the theory
+         that some hosts refuse an unnamed client - but a half-hearted spoof is
+         worse than a name: Wikimedia rate-limits browser-shaped agents hard,
+         and every picture pulled from there came back 429. Five in a row, same
+         file: Mozilla token 429 every time, this one 200 every time. */
+      'user-agent': 'FridayQuiz/1.0 (self-hosted pub quiz; +https://github.com/friday-quiz)',
       accept: 'image/*,text/html;q=0.8'
     }
   });
@@ -509,7 +513,13 @@ async function askAssistant(history, topic) {
   const apiKey = LLM_KEY();
   if (!apiKey) throw new Error('The assistant needs LLM_API_KEY set - put it in .env and restart the server');
 
-  const system = ASSIST_SYSTEM + (topic ? `\n\nThis week's topic, if it helps: "${topic}"` : '');
+  /* The topic is the brief, not a hint. Passed as "if it helps" the model
+     treated it as background colour and cheerfully wrote a general knowledge
+     round when asked for "the whole quiz" - which is the one request where the
+     topic is the entire instruction. */
+  const system = ASSIST_SYSTEM + (topic
+    ? `\n\nThis week's topic is "${topic}". Every question you write is about it unless the quiz master plainly asks for something else, and a request with no subject of its own ("write the whole quiz", "give me a hard one") means this one. Go for the interesting corners of it rather than the first ten facts anybody would name, and vary what you ask: some recall, some odd-one-out, some dates or numbers. If the topic is broad, spread the questions across it; if it is narrow, go deeper rather than drifting off it. Same for the tiebreaker: it wants a number that belongs to this topic.`
+    : '');
 
   const post = (tokensField) => fetch(LLM_URL, {
     method: 'POST',
@@ -1119,10 +1129,22 @@ function stateFor(userId, team) {
       shown: live.shown ?? -1,
       questionCount: qCount,
       reveal: revealMode(live),
+      // Stepped out. The client stops taking the screen over and offers a way
+      // back in; everyone else's counts already exclude them.
+      iLeft: (live.left || []).includes(userId),
       committed: !!live.committed
     };
   }
   return out;
+}
+
+/* Someone joins the room. The one door in, so a player who has stepped out
+   stays out until they say otherwise - a reconnecting phone, a late answer and
+   the lobby all used to push straight into players and undo the leaving. */
+function joinLive(live, userId) {
+  if (!live) return;
+  if ((live.left || []).includes(userId)) return;
+  if (!live.players.includes(userId)) live.players.push(userId);
 }
 
 /* real-time push (SSE) */
@@ -1666,7 +1688,7 @@ async function api(req, res, path) {
     clients.add(client);
     // Opening the app during a game is what joining means - this is what the
     // lobby counts. Once in, you stay in: a phone locking should not drop you.
-    if (team.live && !team.live.players.includes(me) && !isRemoved(team, me)) team.live.players.push(me);
+    if (team.live && !isRemoved(team, me)) joinLive(team.live, me);
     broadcast(team);      // tell everyone else this person just came online
     const beat = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
     req.on('close', () => { clearInterval(beat); clients.delete(client); broadcast(team); });
@@ -1863,6 +1885,9 @@ async function api(req, res, path) {
          played. And not an empty array either - the people already sitting
          there waiting for you to press Start are exactly the ones playing. */
       players: [...onlineIds(team.id)].filter((id) => !isRemoved(team, id)),
+      // Anyone who has stepped out. Kept rather than just dropped from
+      // players, or the next SSE reconnect would walk them straight back in.
+      left: [],
       reveal: REVEAL_MODES.includes(team.revealMode) ? team.revealMode : 'end',
       answers: {}, tieGuesses: {}, startedAt: new Date().toISOString()
     };
@@ -1938,7 +1963,10 @@ async function api(req, res, path) {
     if (live.index < (live.asked ?? -1) && (live.answers[me] || {})[live.index] !== undefined) {
       return json(res, 409, { error: 'The quiz has moved on from that one' });
     }
-    if (!live.players.includes(me)) live.players.push(me);
+    // Left the quiz. Nothing they send counts until they rejoin, or a phone
+    // left on a table goes on answering for someone who has gone home.
+    if ((live.left || []).includes(me)) return json(res, 409, { error: 'You have left this quiz' });
+    joinLive(live, me);
     live.answers[me] = live.answers[me] || {};
     live.answers[me][live.index] = Number(option);
     broadcast(team);
@@ -1960,7 +1988,10 @@ async function api(req, res, path) {
     }
     const n = Number(value);
     if (!Number.isFinite(n)) return json(res, 400, { error: 'That is not a number' });
-    if (!live.players.includes(me)) live.players.push(me);
+    // Left the quiz. Nothing they send counts until they rejoin, or a phone
+    // left on a table goes on answering for someone who has gone home.
+    if ((live.left || []).includes(me)) return json(res, 409, { error: 'You have left this quiz' });
+    joinLive(live, me);
     live.tieGuesses[me] = n;
     broadcast(team);
     return json(res, 200, { ok: true });
@@ -2078,6 +2109,33 @@ async function api(req, res, path) {
       reason: roles.reason, topic: '', quiz: null
     };
     await persist(); broadcast(team);
+    return json(res, 200, { ok: true });
+  }
+
+  /* Stepping out of a running quiz. Not the same as signing out, and not the
+     quiz maker's business either - they have Stop, which ends it for the room.
+     Answers already given are kept, so coming back picks up where you were. */
+  if (path === '/api/live/leave' && req.method === 'POST') {
+    if (!requireUser()) return;
+    const live = team.live;
+    if (!live) return json(res, 200, { ok: true });
+    if (me === (live.final ? live.final.quizMasterId : team.upcoming.quizMasterId)) {
+      return json(res, 403, { error: 'You are running it. Use Stop to end it for everyone.' });
+    }
+    live.left = live.left || [];
+    if (!live.left.includes(me)) live.left.push(me);
+    live.players = live.players.filter((p) => p !== me);
+    broadcast(team);
+    return json(res, 200, { ok: true });
+  }
+
+  if (path === '/api/live/rejoin' && req.method === 'POST') {
+    if (!requireUser()) return;
+    const live = team.live;
+    if (!live) return json(res, 400, { error: 'Nothing running' });
+    live.left = (live.left || []).filter((p) => p !== me);
+    joinLive(live, me);
+    broadcast(team);
     return json(res, 200, { ok: true });
   }
 

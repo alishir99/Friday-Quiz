@@ -124,6 +124,10 @@
   Net.flip     = function () { return Net.call('api/live/flip', 'POST', {}); };
   // 'end' = all the answers after the last question, 'each' = straight away.
   Net.reveal  = function (mode) { return Net.call('api/live/reveal', 'POST', { mode: mode }); };
+  // A player stepping out, and coming back. Not the same as signing out, and
+  // not the same as Stop, which ends the game for the whole room.
+  Net.leaveLive  = function () { return Net.call('api/live/leave', 'POST', {}); };
+  Net.rejoinLive = function () { return Net.call('api/live/rejoin', 'POST', {}); };
   Net.finish  = function () { return Net.call('api/live/finish', 'POST', {}); };
   Net.stop    = function () { return Net.call('api/live/stop', 'POST', {}); };
 

@@ -1079,6 +1079,53 @@ test('going back reopens a question, unless it has already been marked', async (
    question run, so the shown-answer wall never fires there. Stepping back
    still has to close the question, or it can be revised at leisure while the
    quiz maker re-reads it to the room. */
+/* A player used to be stuck: the quiz takes every screen over and only the
+   quiz maker could end it. Leaving has to drop them out of the counts without
+   throwing away what they already answered, and it has to stick - the phone
+   reconnects constantly, and every reconnect used to push them back in. */
+test('a player can step out of a running quiz, and come back to it', async () => {
+  const state = await stateAs('ali');
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Leaving',
+      questions: [
+        { id: 'q1', text: 'One?', options: ['a', 'b'], correct: 0 },
+        { id: 'q2', text: 'Two?', options: ['a', 'b'], correct: 0 }
+      ],
+      tieBreaker: { text: 'n?', unit: '', answer: 10 } } }
+  });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+  await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });
+
+  const before_ = await stateAs('ali');
+  assert.ok(before_.live.playerCount >= 1, 'bea is in the room');
+
+  assert.equal((await call('/api/live/leave', { method: 'POST', as: 'bea' })).status, 200);
+
+  const gone = await stateAs('bea');
+  assert.equal(gone.live.iLeft, true, 'her own screen stops being taken over');
+  const room = await stateAs('ali');
+  assert.equal(room.live.playerCount, before_.live.playerCount - 1, 'and the tally stops waiting for her');
+  assert.ok(!room.live.players.includes(gone.me), 'out of the room');
+
+  // A phone left on a table must not go on answering for someone who has gone.
+  const stray = await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'bea' });
+  assert.equal(stray.status, 409, 'an answer from a phone that has left does not count');
+  assert.ok(!(await stateAs('ali')).live.players.includes(gone.me), 'and it does not walk her back in');
+
+  assert.equal((await call('/api/live/rejoin', { method: 'POST', as: 'bea' })).status, 200);
+  const back = await stateAs('bea');
+  assert.equal(back.live.iLeft, false, 'back in');
+  assert.equal(back.live.myAnswers[0], 0, 'and what she answered before is still hers');
+
+  // The quiz maker has Stop, not Leave: leaving would abandon the room.
+  assert.equal((await call('/api/live/leave', { method: 'POST', as: 'ali' })).status, 403);
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});
+
 test('holding answers to the end still closes a question once it is past', async () => {
   const state = await stateAs('ali');
   await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });

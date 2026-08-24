@@ -9,9 +9,21 @@
   var Live = QC.live = {};
   var KEYS = QC.OPTION_KEYS;
 
-  Live.isRunning = function () { return !!(QC.state && QC.state.live); };
+  /* Whether the running quiz should take this screen over. A player who has
+     stepped out is still in a team with a game on, but it is no longer theirs
+     to look at - the home screen offers them the way back in. */
+  Live.isRunning = function () {
+    var L = QC.state && QC.state.live;
+    return !!(L && !L.iLeft);
+  };
 
   Live.render = function () {
+    /* A replay left open would sit on top of a game that has just started -
+       fixed and full-screen, so the player would never know. The live thing
+       wins. */
+    var open = document.querySelector('.stage-live.deck');
+    if (open) open.remove();
+
     var master = QC.isMaster();
     var view = master ? presenter() : player();
     /* A clip whose slide has gone stops. Detaching an <audio> from the page
@@ -33,10 +45,44 @@
        So it gets what the projector gets: a fixed frame, and the card shrunk
        until all of it is inside. Everything on screen at once, smaller,
        instead of some of it at full size and the rest below the fold. */
-    var frame = el('div.play-fit', view);
+    /* The way out. A sibling of the card rather than part of it: the card gets
+       scaled to fit and this must not shrink with it, and every player screen
+       is built by a different function - one button here beats ten. */
+    var frame = el('div.play-fit', [view, leaveButton()]);
     requestAnimationFrame(function () { fitPlay(frame); });
     return frame;
   };
+
+  /* Until this existed a player was simply stuck: the quiz takes every screen
+     over, the nav is hidden with it, and there was no way back to the app or
+     out of the account until the quiz maker pressed Stop. */
+  function leaveButton() {
+    return el('button.btn-icon.play-leave', {
+      type: 'button', 'aria-label': 'Leave the quiz', text: '✕',
+      onclick: function () {
+        QC.sheet({
+          title: 'Leave the quiz?',
+          sub: 'Your answers so far are kept either way, and you can come back from the home screen.',
+          content: el('div.stack', { style: { gap: '10px', marginTop: '18px' } }, [
+            el('button.btn.block', { type: 'button', text: 'Leave the quiz', onclick: function () {
+              QC.closeSheet();
+              QC.net.leaveLive().catch(function (e) { QC.toast(e.message); });
+            } }),
+            el('button.btn.ghost.block', { type: 'button', text: 'Sign out', onclick: function () {
+              QC.closeSheet();
+              /* Left first, then signed out. Signing out alone leaves the
+                 account in the room, still counted in "7 of 9 answered" by a
+                 phone that has gone. */
+              QC.net.leaveLive().catch(function () {}).then(function () {
+                return QC.net.logout();
+              }).then(function () { QC.net.disconnect(); QC.boot(); });
+            } })
+          ]),
+          actions: [el('button.btn.primary', { type: 'button', text: 'Stay', onclick: QC.closeSheet })]
+        });
+      }
+    });
+  }
 
   /* Measured after every picture is in, for the same reason the slide preview
      is: a picture that has not loaded has no height, so a fit run before it
@@ -76,12 +122,21 @@
   }
 
   /* An option's own picture or clip. Sound on an option is a stage thing -
-     six clips on one slide need the quiz master to play them one at a time. */
+     six clips on one slide need the quiz master to play them one at a time.
+
+     Note the alt text here and on the two below: a plain description, never
+     m.name. The file is called whatever it was saved as and that is very often
+     the answer - "European_badger_(Meles_meles).jpg" read out by a screen
+     reader, or shown while a slow connection loads, hands the question over.
+     Pictures found from a hint make that the rule rather than the exception,
+     since those are named by their subject. The editor still shows the name:
+     only the quiz maker sees that, and there it is what tells one file from
+     another. */
   function optionMedia(m, onStage) {
     if (!m) return null;
     var url = QC.mediaUrl(m);
     if (!url) return null;
-    if (m.kind === 'image') return el('img.opt-pic', { src: url, alt: m.name || '' });
+    if (m.kind === 'image') return el('img.opt-pic', { src: url, alt: 'Picture for this answer' });
     if (!onStage) return el('span.opt-cue', { text: m.kind === 'audio' ? '🔊' : '📺' });
     return el(m.kind === 'audio' ? 'audio.opt-clip' : 'video.opt-clip', {
       src: url, controls: true, preload: 'metadata', playsinline: true
@@ -97,7 +152,7 @@
     if (!url) return null;
 
     var box;
-    if (m.kind === 'image') box = el('div.s-media', [el('img', { src: url, alt: m.name || '' })]);
+    if (m.kind === 'image') box = el('div.s-media', [el('img', { src: url, alt: 'Picture for this slide' })]);
     else if (m.kind === 'audio') box = el('div.s-media.audio', [nowPlaying(url)]);
     else box = el('div.s-media.video', [
       el('video', { src: url, controls: true, preload: 'auto', playsinline: true })
@@ -207,7 +262,7 @@
     if (!url) return null;
 
     if (m.kind === 'image') {
-      return el('img.play-media', { src: url, alt: m.name || '' });
+      return el('img.play-media', { src: url, alt: 'Picture for this question' });
     }
     /* A clip is running on the projector and not on this phone, so all this
        screen can do is point at it. A row of bars rising and falling says
@@ -892,6 +947,121 @@
     return questionSlide(q, index, count, !!reveal, null);
   };
 
+  /* THE REPLAY: a finished quiz, slide by slide.
+
+     The history used to show a list of questions with the right one in green,
+     which is a summary of a quiz rather than the quiz. This is the deck the
+     room actually saw - same slides, same pictures, same layout - built from
+     the copy the server froze when the game was saved. Everyone can walk it at
+     their own pace afterwards.
+
+     The same builders the projector uses, not lookalikes: a replay that drifts
+     from what was on the screen is worse than no replay.
+
+     `h` is the history entry (topic, date, ranking); `q` the saved quiz. */
+  Live.deck = function (h, q) {
+    var count = q.questions.length;
+    var rows = tieRowsFrom(h, q);
+
+    var slides = [function () {
+      return el('div.slide.topic-slide', [
+        el('div.s-kicker', { text: QC.fmtDate(h.date, { day: 'numeric', month: 'long', year: 'numeric' }) }),
+        el('h1.s-title', { text: h.topic || 'Anything goes' }),
+        el('p.s-sub', { text: count + ' questions and a tiebreaker' })
+      ]);
+    }];
+
+    /* Question then answer, the way it runs in 'each' mode. Both, because the
+       question on its own is what you would set for somebody else and the
+       answer on its own gives that away. */
+    q.questions.forEach(function (qq, i) {
+      slides.push(function () { return questionSlide(qq, i, count, false, null); });
+      slides.push(function () { return questionSlide(qq, i, count, true, null); });
+    });
+    slides.push(function () { return tieSlide(q.tieBreaker, false, rows, null); });
+    slides.push(function () { return tieSlide(q.tieBreaker, true, rows, null); });
+    if ((h.ranking || []).length) {
+      slides.push(function () {
+        return boardSlide((h.ranking || []).map(function (r) {
+          return { userId: r.memberId, name: r.name, score: r.score,
+            tieGuess: r.tieGuess === undefined ? null : r.tieGuess };
+        }), h.questionCount || count, h.topic);
+      });
+    }
+
+    var at = 0;
+    var stage = el('div.stage-live.deck');
+    var frame = el('div.slide-frame');
+    var pos = el('span.count');
+    var bar = el('div.progress', [el('i')]);
+    var prev = el('button.nav-big', { type: 'button' }, ['‹  Back']);
+    var next = el('button.nav-big.primary', { type: 'button' }, ['Next  ›']);
+
+    function draw() {
+      QC.clear(frame).appendChild(slides[at]());
+      pos.textContent = (at + 1) + ' / ' + slides.length;
+      bar.firstChild.style.width = ((at + 1) / slides.length) * 100 + '%';
+      prev.disabled = at === 0;
+      next.disabled = at === slides.length - 1;
+      /* Same sum the projector does. Next frame so it measures a slide that
+         has been laid out, and again per picture, since one that has not
+         loaded yet has no height and would be measured as if it were not
+         there at all. */
+      requestAnimationFrame(function () { Live.fitInto(frame.firstChild); });
+      [].forEach.call(frame.querySelectorAll('img, video'), function (m) {
+        if (m.complete || m.readyState >= 1) return;
+        m.addEventListener('load', function () { Live.fitInto(frame.firstChild); });
+        m.addEventListener('loadedmetadata', function () { Live.fitInto(frame.firstChild); });
+      });
+    }
+
+    function go(n) {
+      at = Math.max(0, Math.min(slides.length - 1, n));
+      draw();
+    }
+    prev.onclick = function () { go(at - 1); };
+    next.onclick = function () { go(at + 1); };
+
+    function close() {
+      document.removeEventListener('keydown', keys, true);
+      window.removeEventListener('resize', refit);
+      stage.remove();
+    }
+    function keys(e) {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(at + 1); }
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); go(at - 1); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    }
+    function refit() { Live.fitInto(frame.firstChild); }
+    document.addEventListener('keydown', keys, true);
+    window.addEventListener('resize', refit);
+
+    QC.append(stage, [
+      frame,
+      el('div.stage-bar', [
+        el('button.btn-icon', { type: 'button', 'aria-label': 'Close the replay', text: '✕', onclick: close }),
+        pos, bar, prev, next
+      ])
+    ]);
+    draw();
+    return stage;
+  };
+
+  /* The guesses, rebuilt from what was saved with the result. tieRows() reads
+     the running game; a finished one only kept each player's number. */
+  function tieRowsFrom(h, q) {
+    var answer = Number(q.tieBreaker.answer);
+    return (h.ranking || []).map(function (r) {
+      var guess = (r.tieGuess === undefined || r.tieGuess === null) ? null : Number(r.tieGuess);
+      return {
+        userId: r.memberId,
+        name: r.name,
+        guess: guess,
+        diff: guess === null ? null : Math.abs(guess - answer)
+      };
+    });
+  }
+
   /* Held on to so the counter can be nudged without rebuilding the slide.
      Cleared whenever a slide is drawn, so a stale one is never written to. */
   var tally = null;
@@ -928,10 +1098,16 @@
   };
 
   function pTie(reveal) {
-    var tb = quiz().tieBreaker, L = live();
+    return tieSlide(quiz().tieBreaker, reveal, live().tieRows,
+      reveal ? null : tallyBox('tie'));
+  }
+
+  /* The tiebreaker, drawn as the slide the room sees. Taken out of pTie so the
+     history replay can call it too - the same reason questionSlide exists. */
+  function tieSlide(tb, reveal, rows, foot) {
     // With everyone's guesses listed the slide gets tall, so the question and
     // any media shrink out of the way.
-    var guesses = reveal ? tieBoard(L.tieRows, tb.unit, true) : null;
+    var guesses = reveal ? tieBoard(rows, tb.unit, true) : null;
     return el('div.slide' + (tb.media ? '.has-media' : '') + (guesses ? '.tight' : ''), [
       el('div.s-kicker', { text: 'Tiebreaker  ·  closest number wins' }),
       el('h2.s-q', { text: tb.text }),
@@ -943,11 +1119,11 @@
               el('div.val', { text: tb.answer + (tb.unit ? ' ' + tb.unit : '') }),
               tb.note ? el('div.note', { text: tb.note }) : null
             ]),
-            tieChart(L.tieRows || [], tb.unit, tb.answer) || guesses
+            tieChart(rows || [], tb.unit, tb.answer) || guesses
           ])
         : el('div', [
             el('p.s-sub', { text: 'Everyone type in a number. It only matters if two people finish level.' }),
-            tallyBox('tie')
+            foot
           ])
     ]);
   }
@@ -962,10 +1138,13 @@
 
   function pBoard() {
     var L = live();
-    var rows = L.ranking || [];
+    return boardSlide(L.ranking || [], L.questionCount, L.topic);
+  }
+
+  function boardSlide(rows, questionCount, topic) {
     var lastIdx = rows.length - 1;
     return el('div.slide', [
-      el('div.s-kicker', { text: L.topic || '' }),
+      el('div.s-kicker', { text: topic || '' }),
       el('h1.s-title', { style: { fontSize: 'clamp(34px,4.6vw,68px)' }, text: 'The results' }),
       el('div.stage-board', rows.map(function (r, i) {
         var cls = i === 0 ? '.p1' : (i === lastIdx && rows.length > 1 ? '.last' : '');
@@ -977,7 +1156,7 @@
           ]),
           el('div.row', { style: { gap: '14px' } }, [
             i === lastIdx && rows.length > 1 ? el('span.tag', { text: 'WOODEN SPOON' }) : null,
-            el('div.sc', { text: r.score + '/' + L.questionCount })
+            el('div.sc', { text: r.score + '/' + questionCount })
           ])
         ]);
         node.style.animationDelay = (i * 90) + 'ms';

@@ -192,6 +192,20 @@
       : topicShown ? topicText : 'Topic chosen';
 
     return el('div.stack', { style: { gap: '22px' } }, [
+      /* Stepped out of a game that is still going. Nothing else on this page
+         is what they came for, so it goes above all of it. */
+      (s.live && s.live.iLeft) ? el('div.card.rejoin', [
+        el('div', [
+          el('div.kicker', { text: 'The quiz is still running' }),
+          el('p.muted', { style: { marginTop: '6px' },
+            text: QC.name(s.live.quizMasterId) + ' is running it. Your answers so far are still there.' })
+        ]),
+        el('div.spacer'),
+        el('button.btn.primary', { type: 'button', text: 'Rejoin', onclick: function (e) {
+          e.target.disabled = true;
+          QC.net.rejoinLive().catch(function (err) { QC.toast(err.message); e.target.disabled = false; });
+        } })
+      ]) : null,
       el('div.hero', [
         el('div.row', [
           el('span.pill.' + pills[0], [el('span.dot'), pills[1]]),
@@ -883,7 +897,12 @@
           } }) : el('span.pill.done', { text: '✓ Ready to play. Start it from the home screen' }),
           el('div.spacer'),
           saveState
-        ])
+        ]),
+        /* Once, up here, rather than inside every question. The same three
+           steps repeated eleven times is not eleven reminders, it is noise you
+           learn to look past - and they are the same three steps whichever
+           question you happen to be on. */
+        pasteTips()
       ]);
     }
 
@@ -908,19 +927,38 @@
       });
       var err = el('p.assist-err', { hidden: true });
 
-      // Worth a click rather than a wall of instructions: the first one is
-      // the whole point of the panel.
-      var EXAMPLES = [
-        'Write the whole quiz about guessing animal sounds, keep it funny',
-        'Give me one hard question about the 1980s',
-        'Ten questions on world capitals, mixed difficulty'
-      ];
+      /* Worth a click rather than a wall of instructions: the first one is the
+         whole point of the panel. Written around the topic once there is one -
+         a starter that says "the 1980s" when the week is about sea creatures
+         is a suggestion you have to rewrite before it is any use, which is the
+         same as no suggestion. */
+      function examples() {
+        var t = String(quiz.topic || u.topic || '').trim();
+        if (!t) {
+          return [
+            'Write the whole quiz about guessing animal sounds, keep it funny',
+            'Give me one hard question about the 1980s',
+            'Ten questions on world capitals, mixed difficulty'
+          ];
+        }
+        return [
+          'Write the whole quiz about ' + t,
+          'Ten questions on ' + t + ', mixed difficulty and keep it funny',
+          'One really hard question about ' + t,
+          'A picture round about ' + t
+        ];
+      }
 
       function welcome() {
+        var topic = String(quiz.topic || u.topic || '').trim();
         return el('div.assist-welcome', [
           el('p', { text: 'Get help from Quizzy, your humble servant. Ask for a single question, a few ideas, or the whole quiz in one go.' }),
+          topic ? el('p.assist-topic', [
+            el('span.lbl', { text: 'This week' }),
+            el('span.val', { text: topic })
+          ]) : null,
           el('div.assist-try', { text: 'Try' }),
-          el('div.assist-examples', EXAMPLES.map(function (ex) {
+          el('div.assist-examples', examples().map(function (ex) {
             return el('button.assist-example', { type: 'button', text: ex,
               onclick: function () { send(ex); } });
           }))
@@ -1377,26 +1415,10 @@
       card.appendChild(el('div.q-body', [
         el('div.field', [
           el('label', { text: 'Question ' + (i + 1) }),
-          el('p.paste-tip', [
-            el('b', { text: 'Pictures:' }),
-            ' right-click any picture on the web, choose ',
-            el('b', { text: 'Copy image' }),
-            ', then paste it in here. Pasting a link works on most sites - though '
-            + 'a search results page is not a picture, so that one will not.'
-          ]),
           composeBox(bindArea(q, 'text', 'What is the question?', 'Question ' + (i + 1)), media)
         ]),
         el('div.field', [
           el('label', { text: 'Options' }),
-          /* Said here rather than left to be discovered. Copying the image
-             itself is the reliable half and the one nobody thinks of, so it
-             goes first; a link is the obvious half and works on most sites. */
-          el('p.paste-tip', [
-            el('b', { text: 'Pictures:' }),
-            ' right-click any picture on the web, choose ',
-            el('b', { text: 'Copy image' }),
-            ', then paste into an option below. Pasting a link works too.'
-          ]),
           (function () {
             var needsCorrect = q.correct === null && q.options.some(function (o) { return o.trim(); });
             return el('span.hint' + (needsCorrect ? '.warn' : ''), { text: needsCorrect
@@ -1473,6 +1495,33 @@
         else if (open > i) open = QC.screens._openQ = open - 1;
         renderList(); saveSoon(); refreshHead();
       });
+    }
+
+    /* How a picture gets in. Written out as steps rather than a sentence
+       beginning "Pictures:" - it is the one thing in this editor nobody
+       arrives already knowing, and a paragraph of prose above a text box is
+       read by nobody. Copying the image itself goes first: it is the reliable
+       half and the half people do not think of, since the obvious move is to
+       copy the address.
+
+       Said in both places, because the question and the options take pictures
+       separately and whichever one you are looking at is the one you need. */
+    var PASTE_KEY = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? '⌘' : 'Ctrl';
+
+    function pasteTips() {
+      return el('div.paste-tip', [
+        el('div.paste-tip-h', { text: 'Tips for adding a picture' }),
+        /* No full stops. Every step is one short instruction, and a line that
+           ends in a key cap gets an ugly gap before the dot. */
+        el('ol.paste-tip-steps', [
+          el('li', ['Right-click any picture on the web and choose ', el('b', { text: 'Copy image' })]),
+          el('li', ['Click any question or option below, then press ',
+            el('kbd', { text: PASTE_KEY }), el('span.paste-plus', { text: '+' }), el('kbd', { text: 'V' })]),
+          el('li', ['Or drag the file straight in, or paste the picture’s own address'])
+        ]),
+        el('p.paste-tip-note', {
+          text: 'A search results page is not a picture, so pasting that address will not work.' })
+      ]);
     }
 
     /* Picture, sound or video, part of the question's own box. Files are
@@ -1601,7 +1650,7 @@
             type: 'button',
             'aria-label': hint ? 'Add media to this option: ' + hint : 'Add a picture or sound to this option',
             title: hint ? 'Quizzy suggests: ' + hint : 'Add a picture or sound', onclick: pick
-          }, [el('span', { text: '📎', 'aria-hidden': 'true' }), input]);
+          }, [el('span.ic', { html: QC.paperclip }), input]);
         }
         return el('div.attach', {
           role: 'button', tabindex: '0',
@@ -1611,7 +1660,7 @@
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
           }
         }, [
-          el('span.attach-icon', { text: '📎', 'aria-hidden': 'true' }),
+          el('span.attach-icon.ic', { html: QC.paperclip }),
           el('span.attach-t', { text: hint
             ? 'Quizzy suggests: ' + hint + ' - drop it here or click to choose'
             : 'Drop a picture, sound or video here, click to choose one, or paste a link' }),
@@ -1966,15 +2015,26 @@
             ])
           ]);
         })),
-        el('button.btn.ghost.sm', { type: 'button', text: 'Show the questions and answers',
-          style: { marginTop: '18px' }, onclick: function (e) {
-            // Fetched on demand rather than shipped with every push.
-            e.target.disabled = true;
-            QC.net.pastQuiz(h.id)
-              .then(function (r) { e.target.disabled = false; showQuiz(h, r.quiz); })
-              .catch(function (err) { e.target.disabled = false; QC.toast(err.message); });
-          } })
+        el('div.row', { style: { marginTop: '18px', gap: '10px' } }, [
+          el('button.btn.ghost.sm', { type: 'button', text: '▶  Play it back',
+            onclick: function (e) { withQuiz(h, e.target, function (q) { replay(h, q); }); } }),
+          el('button.btn.quiet.sm', { type: 'button', text: 'Just the answers',
+            onclick: function (e) { withQuiz(h, e.target, function (q) { showQuiz(h, q); }); } })
+        ])
       ]);
+    }
+
+    /* Fetched on demand rather than shipped with every push - the questions
+       are the big half of a past quiz and nobody reads most of them. */
+    function withQuiz(h, btn, then) {
+      btn.disabled = true;
+      QC.net.pastQuiz(h.id)
+        .then(function (r) { btn.disabled = false; then(r.quiz); })
+        .catch(function (err) { btn.disabled = false; QC.toast(err.message); });
+    }
+
+    function replay(h, q) {
+      document.body.appendChild(QC.live.deck(h, q));
     }
 
     function showQuiz(h, q) {
