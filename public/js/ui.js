@@ -97,6 +97,128 @@
             '<path d="M1.5 1L7.5 7L1.5 13" stroke="currentColor" stroke-width="2" ' +
             'stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+  /* The two list buttons on the Rules toolbar. Drawn rather than typed: the
+     bullet and number glyphs a font ships with sit at their own heights and
+     will not line up beside a B and an I. */
+  QC.bulletIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+    '<path d="M9 6h11M9 12h11M9 18h11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+    '<circle cx="4.5" cy="6" r="1.6" fill="currentColor"/><circle cx="4.5" cy="12" r="1.6" fill="currentColor"/>' +
+    '<circle cx="4.5" cy="18" r="1.6" fill="currentColor"/></svg>';
+
+  QC.numberIcon = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+    '<path d="M9 6h11M9 12h11M9 18h11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>' +
+    '<text x="1" y="8.6" font-size="8" font-weight="700" fill="currentColor">1</text>' +
+    '<text x="1" y="14.6" font-size="8" font-weight="700" fill="currentColor">2</text>' +
+    '<text x="1" y="20.6" font-size="8" font-weight="700" fill="currentColor">3</text></svg>';
+
+  /* written text, drawn
+
+     The rules are stored the way they always were - plain text - so nothing
+     written before this needs converting, and nothing coming back from the
+     server can smuggle markup in: every node below is built, never handed to
+     innerHTML. The subset is exactly what the Rules toolbar can write and no
+     more: **bold**, *italic*, # headings, - bullets, 1. numbers. */
+
+  var INLINE = /\*\*([\s\S]+?)\*\*|\*([^*\n]+)\*/g;
+  QC.md = { bullet: /^\s*[-*]\s+/, number: /^\s*\d+[.)]\s+/, heading: /^\s*#{1,3}\s+/ };
+
+  function inlineInto(node, str) {
+    var last = 0, m;
+    INLINE.lastIndex = 0;
+    while ((m = INLINE.exec(str))) {
+      if (m.index > last) node.appendChild(document.createTextNode(str.slice(last, m.index)));
+      var mark = document.createElement(m[1] ? 'strong' : 'em');
+      mark.textContent = m[1] || m[2];
+      node.appendChild(mark);
+      last = m.index + m[0].length;
+    }
+    if (last < str.length) node.appendChild(document.createTextNode(str.slice(last)));
+  }
+
+  function isBlock(line) {
+    return QC.md.bullet.test(line) || QC.md.number.test(line) || QC.md.heading.test(line);
+  }
+
+  QC.richText = function (text) {
+    var doc = document.createElement('div');
+    doc.className = 'doc';
+    var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+    var i = 0;
+    while (i < lines.length) {
+      var line = lines[i];
+      if (!line.trim()) { i++; continue; }
+
+      var h = /^\s*(#{1,3})\s+(.*)$/.exec(line);
+      if (h) {
+        var head = document.createElement('h' + (h[1].length + 1));
+        inlineInto(head, h[2]);
+        doc.appendChild(head);
+        i++; continue;
+      }
+
+      var ordered = !QC.md.bullet.test(line) && QC.md.number.test(line);
+      if (ordered || QC.md.bullet.test(line)) {
+        var re = ordered ? QC.md.number : QC.md.bullet;
+        var list = document.createElement(ordered ? 'ol' : 'ul');
+        while (i < lines.length && re.test(lines[i])) {
+          var item = document.createElement('li');
+          inlineInto(item, lines[i].replace(re, ''));
+          list.appendChild(item);
+          i++;
+        }
+        doc.appendChild(list); continue;
+      }
+
+      /* A run of ordinary lines is one paragraph with the breaks kept. People
+         press Enter where they want a new line, not where a Markdown parser
+         would like a blank one. */
+      var p = document.createElement('p');
+      var first = true;
+      while (i < lines.length && lines[i].trim() && !isBlock(lines[i])) {
+        if (!first) p.appendChild(document.createElement('br'));
+        inlineInto(p, lines[i]);
+        first = false; i++;
+      }
+      doc.appendChild(p);
+    }
+    return doc;
+  };
+
+  /* What a toolbar button does to the text, with no textarea in sight: value
+     and selection in, value and selection out. Pure, so the fiddly part -
+     where the cursor ends up - can be checked without a browser. */
+  QC.mdApply = function (kind, value, start, end) {
+    var cut = function (from, to, text, s, e) {
+      return { value: value.slice(0, from) + text + value.slice(to), start: s, end: e };
+    };
+
+    var mark = { bold: '**', italic: '*' }[kind];
+    if (mark) {
+      var sel = value.slice(start, end), n = mark.length;
+      // The same button takes it off again, whether the marks are inside the
+      // selection or just outside it.
+      if (sel.length >= 2 * n && sel.slice(0, n) === mark && sel.slice(-n) === mark)
+        return cut(start, end, sel.slice(n, -n), start, end - 2 * n);
+      if (value.slice(start - n, start) === mark && value.slice(end, end + n) === mark)
+        return cut(start - n, end + n, sel, start - n, end - n);
+      return cut(start, end, mark + sel + mark, start + n, end + n);
+    }
+
+    // Line prefixes work on whole lines, however little of them was selected.
+    var from = value.lastIndexOf('\n', start - 1) + 1;
+    var to = value.indexOf('\n', end);
+    if (to < 0) to = value.length;
+    var lines = value.slice(from, to).split('\n');
+    var re = QC.md[kind];
+    var on = lines.every(function (l) { return re.test(l); });
+    var out = lines.map(function (l, k) {
+      var bare = l.replace(QC.md.bullet, '').replace(QC.md.number, '').replace(QC.md.heading, '');
+      if (on) return bare;
+      return (kind === 'number' ? (k + 1) + '. ' : kind === 'heading' ? '## ' : '- ') + bare;
+    }).join('\n');
+    return cut(from, to, out, from, from + out.length);
+  };
+
   /* toasts */
 
   QC.toast = function (msg, ms) {

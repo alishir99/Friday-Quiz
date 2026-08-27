@@ -773,43 +773,137 @@
 
   /* RULES */
 
+  /* Read, then Edit, then Save. It used to be one bare textarea saving every
+     keystroke, which made writing anything longer than a sentence miserable:
+     a list came out as one grey lump, and a half-finished thought was already
+     published. The draft lives out here because the whole screen is redrawn
+     whenever the server says anything - typing has to survive that. */
+  var rulesDraft = null;   // null while reading; the text being written otherwise
+
   QC.screens.rules = function () {
     var s = QC.state;
     var text = s.rules || '';
+    var admin = QC.isAdmin();
+    if (!admin) rulesDraft = null;
 
-    if (!QC.isAdmin()) {
+    if (rulesDraft === null) {
       return el('div.stack', [
-        el('div.page-head', [el('h1', { text: 'Rules' })]),
+        el('div.page-head.row', [
+          el('div', [
+            el('h1', { text: 'Rules' }),
+            admin ? el('p.sub', { text: 'Only you, as admin, can edit this. Everyone can read it.' }) : null
+          ]),
+          el('div.spacer'),
+          admin ? el('button.btn.ghost', {
+            type: 'button', text: text.trim() ? 'Edit' : 'Write the rules',
+            onclick: function () { rulesDraft = text; QC.render(); }
+          }) : null
+        ]),
         text.trim()
-          ? el('div.card', { style: { whiteSpace: 'pre-wrap', lineHeight: '1.6', fontSize: '16px' } }, text)
+          ? el('div.card', [QC.richText(text)])
           : el('div.empty', { style: { marginTop: '20px' } }, [
               el('div.big', { text: 'No rules yet' }),
-              el('p', { style: { marginTop: '8px' } },
-                (s.adminId ? QC.name(s.adminId) : 'The admin') + ' hasn’t written any.')
+              el('p', { style: { marginTop: '8px' } }, admin
+                ? 'House rules, scoring notes, whatever the team should know.'
+                : (s.adminId ? QC.name(s.adminId) : 'The admin') + ' hasn’t written any.')
             ])
       ]);
     }
 
     var saveState = el('span.save-state.dim.small', { text: '' });
-    var area = el('textarea.textarea', {
-      rows: '16', placeholder: 'House rules, scoring notes, whatever the team should know…'
+    var area = el('textarea.textarea.rules-editor', {
+      rows: '18', maxlength: '20000',
+      placeholder: 'House rules, scoring notes, whatever the team should know…'
     });
-    area.value = text;
-    var saveSoon = debounce(function () {
+    area.value = rulesDraft;
+    area.addEventListener('input', function () { rulesDraft = area.value; saveState.textContent = ''; });
+
+    function apply(kind) {
+      var r = QC.mdApply(kind, area.value, area.selectionStart, area.selectionEnd);
+      area.value = rulesDraft = r.value;
+      area.focus();
+      area.setSelectionRange(r.start, r.end);
+    }
+
+    // Ctrl/Cmd+B and I, because every writing box anyone has ever used has them.
+    area.addEventListener('keydown', function (e) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      var k = (e.key || '').toLowerCase();
+      if (k !== 'b' && k !== 'i') return;
+      e.preventDefault();
+      apply(k === 'b' ? 'bold' : 'italic');
+    });
+
+    function tool(kind, label, name) {
+      var attrs = { type: 'button', title: name, 'aria-label': name,
+                    onclick: function () { apply(kind); } };
+      attrs[label.indexOf('<svg') === 0 ? 'html' : 'text'] = label;
+      return el('button.md-btn' + (kind === 'bold' ? '.b' : kind === 'italic' ? '.i' : ''), attrs);
+    }
+
+    /* The written text, as everyone else will read it. Markers on the page
+       are only half an answer - this is the other half, and it is the same
+       renderer the Rules page itself uses. */
+    var preview = el('div.card.rules-preview', { hidden: true });
+    var previewBtn = el('button.btn.ghost.sm', {
+      type: 'button', text: 'Preview',
+      onclick: function () {
+        var showing = preview.hidden;
+        preview.hidden = !showing;
+        area.hidden = showing;
+        previewBtn.textContent = showing ? 'Keep writing' : 'Preview';
+        if (showing) QC.clear(preview).appendChild(QC.richText(area.value));
+        else area.focus();
+      }
+    });
+
+    var save = el('button.btn.primary', { type: 'button', text: 'Save' });
+    save.addEventListener('click', function () {
+      var written = area.value;
+      save.disabled = true;
       saveState.textContent = 'Saving…';
-      QC.net.setRules(area.value)
-        .then(function () { saveState.textContent = 'Saved'; })
-        .catch(function (e) { saveState.textContent = 'Not saved: ' + e.message; });
-    }, 600);
-    area.addEventListener('input', saveSoon);
+      QC.net.setRules(written).then(function () {
+        s.rules = written;      // the broadcast says the same thing a moment later
+        rulesDraft = null;
+        QC.toast('Rules saved');
+        QC.render();
+      }).catch(function (e) {
+        save.disabled = false;
+        saveState.textContent = 'Not saved: ' + e.message;
+      });
+    });
+
+    var cancel = el('button.btn.ghost', {
+      type: 'button', text: 'Cancel',
+      onclick: function () {
+        // Only ask when there is something to lose.
+        if (area.value === text) { rulesDraft = null; QC.render(); return; }
+        QC.confirm({
+          title: 'Throw away your changes?',
+          sub: 'The rules go back to how they were saved.',
+          ok: 'Discard', danger: true
+        }).then(function (yes) { if (yes) { rulesDraft = null; QC.render(); } });
+      }
+    });
 
     return el('div.stack', [
       el('div.page-head', [
         el('h1', { text: 'Rules' }),
-        el('p.sub', { text: 'Only you, as admin, can edit this. Everyone can read it.' })
+        el('p.sub', { text: 'Write it how you want it read. Select some words, then press a button.' })
+      ]),
+      el('div.md-bar', [
+        tool('bold', 'B', 'Bold'),
+        tool('italic', 'I', 'Italic'),
+        tool('heading', 'H', 'Heading'),
+        el('span.md-sep'),
+        tool('bullet', QC.bulletIcon, 'Bullet list'),
+        tool('number', QC.numberIcon, 'Numbered list'),
+        el('div.spacer'),
+        previewBtn
       ]),
       area,
-      el('div.row', { style: { marginTop: '10px' } }, [saveState])
+      preview,
+      el('div.row', { style: { marginTop: '14px' } }, [save, cancel, saveState])
     ]);
   };
 

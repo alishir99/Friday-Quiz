@@ -2441,3 +2441,42 @@ body.playing:not(.presenting) .play-fit > .play {
 /* The history replay. Same stage as the projector - it is the same slides -
    with a bar that steps rather than drives. */
 .deck .stage-bar .count { min-width: 72px; }
+
+/* WRITTEN TEXT. The Rules page, and anything else that is prose rather than
+   controls. Sizes are a shade larger than the UI around them: this is meant to
+   be read, not scanned. */
+.doc { font-size: 16px; line-height: 1.65; color: var(--ink); }
+.doc > *:first-child { margin-top: 0; }
+.doc > *:last-child { margin-bottom: 0; }
+.doc p { margin: 0 0 14px; }
+.doc h2 { font-size: 22px; letter-spacing: -.02em; margin: 26px 0 10px; }
+.doc h3 { font-size: 18px; margin: 22px 0 8px; }
+.doc h4 { font-size: 16px; color: var(--ink-2); margin: 20px 0 6px; }
+.doc ul, .doc ol { margin: 0 0 14px; padding-left: 24px; }
+.doc li { margin: 4px 0; }
+.doc li::marker { color: var(--ink-3); }
+.doc strong { font-weight: 650; }
+
+/* The writing toolbar. Its own row above the box rather than floating over it:
+   on a phone the keyboard owns the bottom half of the screen, and a bar that
+   hides under it is no bar at all. */
+.md-bar {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 5px; margin-bottom: 10px;
+  background: var(--surface-2); border-radius: var(--r-sm);
+}
+.md-btn {
+  min-width: 38px; height: 38px; padding: 0 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 8px; background: transparent; color: var(--ink-2);
+  font-size: 16px; font-family: inherit; cursor: pointer;
+  transition: background .18s var(--ease), color .18s var(--ease);
+}
+.md-btn:hover { background: var(--surface); color: var(--ink); }
+.md-btn:active { transform: scale(.94); }
+.md-btn.b { font-weight: 800; }
+.md-btn.i { font-style: italic; font-family: Georgia, "Times New Roman", serif; }
+.md-sep { width: 1px; height: 22px; margin: 0 4px; background: var(--line); }
+
+.rules-editor { min-height: 320px; line-height: 1.6; font-family: inherit; }
+.rules-preview { min-height: 320px; }
