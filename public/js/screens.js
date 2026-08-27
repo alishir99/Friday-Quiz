@@ -1664,15 +1664,25 @@
         busy = true; fromWeb = true; busyName = shortUrl(url); progress = 0;
         draw();
         QC.net.mediaFromUrl(url).then(function (media) {
-          busy = false;
-          target[key] = media;
-          draw(); saveSoon(); refreshHead();
-          QC.toast(QC.mediaLabel(media) + ' added');
+          fill = null;
+          landed(media);
         }).catch(function (err) {
           busy = false;
           draw();
           QC.toast(err.message);
         });
+      }
+
+      /* However the picture got here - dropped, chosen, or pasted as a link -
+         the same things have to happen afterwards. The slide settings are one
+         of them: the size slider only exists while there is a picture to size,
+         so the panel has to be told, or it sits there empty until something
+         else happens to redraw it. */
+      function landed(media) {
+        busy = false;
+        target[key] = media;
+        draw(); saveSoon(); refreshHead(); drawPreview();
+        QC.toast(QC.mediaLabel(media) + ' added');
       }
 
       function draw() {
@@ -1704,10 +1714,8 @@
           progress = f;
           if (fill) fill.style.width = Math.round(f * 100) + '%';
         }).then(function (media) {
-          busy = false; fill = null;
-          target[key] = media;
-          draw(); saveSoon(); refreshHead();
-          QC.toast(QC.mediaLabel(media) + ' added');
+          fill = null;
+          landed(media);
         }).catch(function (e) {
           busy = false; fill = null;
           draw();
