@@ -1409,7 +1409,7 @@
           var options = (Array.isArray(q.options) ? q.options : []).slice(0, QC.MAX_OPTIONS)
             .map(function (o) { return String(o == null ? '' : o); });
           while (options.length < QC.MIN_OPTIONS) options.push('');
-          var correct = Number.isInteger(q.correct) && q.correct >= 0 && q.correct < options.length ? q.correct : null;
+          var correct = QC.packCorrect(QC.rightSet(q).filter(function (i) { return i < options.length; }));
           /* Quizzy cannot attach a file, only describe the one it wants. The
              hints ride along on the empty slots so the quiz master knows what
              to go and find; uploading is still theirs to do. */
@@ -1514,10 +1514,10 @@
         el('div.field', [
           el('label', { text: 'Options' }),
           (function () {
-            var needsCorrect = q.correct === null && q.options.some(function (o) { return o.trim(); });
+            var needsCorrect = !QC.rightSet(q).length && q.options.some(function (o) { return o.trim(); });
             return el('span.hint' + (needsCorrect ? '.warn' : ''), { text: needsCorrect
               ? '⚠  No correct answer picked yet - tap a letter.'
-              : 'Tap a letter to mark the correct one.' });
+              : 'Tap a letter to mark it correct. Tap more than one where more than one is - tap them all to give the question away.' });
           })(),
           el('div.stack', { style: { gap: '10px', marginTop: '4px' } }, q.options.map(function (opt, oi) {
             var key = QC.OPTION_KEYS[oi];
@@ -1529,10 +1529,18 @@
             // an option becomes that option's picture.
             optField.addEventListener('paste', function (e) { optMedia.takePaste(e); });
             return el('div.opt-row', [
-              el('button.opt-key' + (q.correct === oi ? '.on' : ''), {
+              el('button.opt-key' + (QC.isRight(q, oi) ? '.on' : ''), {
                 type: 'button', text: key,
-                'aria-label': 'Mark option ' + key + ' as correct',
-                onclick: function () { q.correct = oi; renderList(); saveSoon(); refreshHead(); }
+                'aria-pressed': QC.isRight(q, oi) ? 'true' : 'false',
+                'aria-label': 'Option ' + key + ' is correct',
+                // A toggle, so a mistaken letter comes off again and a
+                // question can have as many right answers as it deserves.
+                onclick: function () {
+                  var right = QC.rightSet(q), at = right.indexOf(oi);
+                  if (at === -1) right.push(oi); else right.splice(at, 1);
+                  q.correct = QC.packCorrect(right);
+                  renderList(); saveSoon(); refreshHead();
+                }
               }),
               optField,
               optMedia,
@@ -2149,7 +2157,7 @@
               el('div.small.dim', { text: 'Question ' + (i + 1) }),
               el('div', { style: { fontWeight: '550', marginTop: '3px' }, text: qq.text }),
               el('div', { style: { color: 'var(--good)', fontWeight: '550', marginTop: '4px' },
-                text: qq.options[qq.correct] })
+                text: QC.rightSet(qq).map(function (r) { return qq.options[r]; }).join(', ') })
             ]);
           }).concat([
             el('div', { style: { borderTop: '1px solid var(--line)', paddingTop: '16px' } }, [

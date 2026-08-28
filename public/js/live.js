@@ -930,7 +930,7 @@
   function optionRow(shape, opts, q, reveal) {
     var row = el('div.s-opts.opts-' + shape + '.cols-' + optionColumns(shape, opts.length)
       + (shape === 'pics' ? '.with-media' : ''), opts.map(function (o) {
-      var cls = reveal ? (o.i === q.correct ? '.right' : '.wrong') : '';
+      var cls = reveal ? (QC.isRight(q, o.i) ? '.right' : '.wrong') : '';
       return el('div.s-opt' + cls, [
         el('span.k', { text: KEYS[o.i] }),
         optionMedia(o.media, true),
@@ -1442,7 +1442,7 @@
   function plAnswer() {
     var L = live(), q = quiz().questions[L.index];
     var mine = L.myAnswers[L.index];
-    var right = mine === q.correct;
+    var right = QC.isRight(q, mine);
     var opts = filledOptions(q);
 
     return el('div.play', [
@@ -1454,11 +1454,11 @@
       el('h2.play-q', { text: q.text }),
       phoneMedia(q.media),
       el('div.play-opts', opts.map(function (o) {
-        var cls = o.i === q.correct ? '.right' : (o.i === mine ? '.mine-wrong' : '.faded');
+        var cls = QC.isRight(q, o.i) ? '.right' : (o.i === mine ? '.mine-wrong' : '.faded');
         return el('div.play-opt' + cls, [
           el('span.k', { text: KEYS[o.i] }),
           el('span.t', { text: o.text }),
-          o.i === q.correct ? el('span.tick', { text: '✓' }) : null
+          QC.isRight(q, o.i) ? el('span.tick', { text: '✓' }) : null
         ]);
       })),
       /* Same mark as the projector footnote, so the two screens are plainly

@@ -1391,3 +1391,48 @@ test('a tie further up the table is not tossed for', async () => {
 
   await call('/api/live/stop', { method: 'POST', as: 'ali' });
 });
+
+/* A question can have more than one right answer - two spellings that are both
+   fine, or every option at once when the maker means to give the point away.
+   The stored shape stays a bare number while there is only one, so quizzes
+   written before this still read back the way they were saved. */
+test('a question can have more than one right answer', async () => {
+  const state = await stateAs('ali');
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });
+  const saved = await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Generosity',
+      questions: [
+        { id: 'q1', text: 'Which is a colour?', options: ['grey', 'gray'], correct: [0, 1] },
+        { id: 'q2', text: 'Only one here?', options: ['a', 'b'], correct: 1 },
+        // Out of range and repeated: neither should survive the save.
+        { id: 'q3', text: 'Tidied?', options: ['a', 'b'], correct: [1, 1, 9] }
+      ],
+      tieBreaker: { text: 'n?', unit: '', answer: 10 } } }
+  });
+  assert.equal(saved.status, 200);
+
+  let qs = (await stateAs('ali')).upcoming.quiz.questions;
+  assert.deepEqual(qs[0].correct, [0, 1], 'both are kept');
+  assert.equal(qs[1].correct, 1, 'one stays a plain number');
+  assert.equal(qs[2].correct, 1, 'duplicates and nonsense indexes are dropped');
+  assert.equal((await stateAs('ali')).upcoming.quizReady, true,
+    'and a question with two right answers counts as finished');
+
+  await call('/api/live/reveal', { method: 'POST', body: { mode: 'each' }, as: 'ali' });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+
+  // One each, and only one each - a player still gets a single pick.
+  await call('/api/live/answer', { method: 'POST', body: { option: 0 }, as: 'bea' });
+  await call('/api/live/answer', { method: 'POST', body: { option: 1 }, as: 'cal' });
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });   // a0: it is marked now
+
+  assert.deepEqual((await stateAs('bea')).live.myScore, { right: 1, of: 1 },
+    'the first right answer scores');
+  assert.deepEqual((await stateAs('cal')).live.myScore, { right: 1, of: 1 },
+    'and so does the other one');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+  await call('/api/live/reveal', { method: 'POST', body: { mode: 'end' }, as: 'ali' });
+});

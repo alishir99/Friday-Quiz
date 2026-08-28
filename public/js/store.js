@@ -141,11 +141,23 @@
     return !!String(q.options[i] || '').trim() || !!(q.optionMedia && q.optionMedia[i]);
   };
 
+  /* One right answer, or several. The maker can tick more than one option -
+     two spellings that are both fine, or every option at once for a question
+     meant as a gift to the whole room. A single one is still stored as a bare
+     number, so quizzes written before this read back unchanged; these two are
+     the only things that look at the field. Mirrors rightSet() on the server. */
+  QC.rightSet = function (q) {
+    var raw = q && Array.isArray(q.correct) ? q.correct : [q && q.correct];
+    return raw.filter(function (i) { return typeof i === 'number' && i >= 0; });
+  };
+  QC.isRight = function (q, pick) { return QC.rightSet(q).indexOf(pick) !== -1; };
+
   QC.questionReady = function (q) {
     if (!q || !q.text.trim()) return false;
     var filled = q.options.filter(function (o, i) { return QC.optionFilled(q, i); });
+    var right = QC.rightSet(q);
     return filled.length >= QC.MIN_OPTIONS
-      && typeof q.correct === 'number' && QC.optionFilled(q, q.correct);
+      && right.length > 0 && right.every(function (i) { return QC.optionFilled(q, i); });
   };
 
   QC.tieBreakerReady = function (tb) {
@@ -232,9 +244,22 @@
     // Whatever was attached to that option goes with it, or every picture
     // below shifts up onto the wrong answer.
     if (Array.isArray(q.optionMedia)) q.optionMedia.splice(index, 1);
-    if (q.correct === index) q.correct = 0;
-    else if (q.correct > index) q.correct--;
+    /* Every right answer below the gap slides up one; a right answer that was
+       the one removed simply stops being one. Left with none, the first option
+       takes the mark rather than the question quietly becoming unfinishable. */
+    var right = QC.rightSet(q)
+      .filter(function (i) { return i !== index; })
+      .map(function (i) { return i > index ? i - 1 : i; });
+    q.correct = QC.packCorrect(right.length ? right : [0]);
     return true;
+  };
+
+  /* A number while there is one, a list while there are more, null while
+     there are none. Mirrors packCorrect() on the server, which has the last
+     word on what gets stored. */
+  QC.packCorrect = function (list) {
+    var clean = list.filter(function (v, i) { return list.indexOf(v) === i; }).sort(function (a, b) { return a - b; });
+    return clean.length === 0 ? null : clean.length === 1 ? clean[0] : clean;
   };
 
   QC.addOption = function (q) {

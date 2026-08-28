@@ -456,9 +456,9 @@ Never use an em dash (—) or an en dash (–), anywhere: not in questions, opti
 function spreadAnswers(quiz) {
   if (!quiz || !Array.isArray(quiz.questions)) return quiz;
   for (const q of quiz.questions) {
-    if (!Array.isArray(q.options) || !Number.isInteger(q.correct)) continue;
-    if (q.correct < 0 || q.correct >= q.options.length) continue;
-    const right = q.options[q.correct];
+    if (!Array.isArray(q.options)) continue;
+    const right = rightSet(q).filter((i) => i < q.options.length);
+    if (!right.length) continue;
     const hints = Array.isArray(q.optionHints) ? q.optionHints.slice() : null;
     // Fisher-Yates, carrying any per-option hint along with its option.
     const order = q.options.map((_, i) => i);
@@ -466,9 +466,12 @@ function spreadAnswers(quiz) {
       const j = randomBytes(1)[0] % (i + 1);
       [order[i], order[j]] = [order[j], order[i]];
     }
+    // Where each option ended up, so the right ones are followed by position
+    // rather than by their text - two options can read the same.
+    const place = new Map(order.map((was, now) => [was, now]));
     q.options = order.map((i) => q.options[i]);
     if (hints) q.optionHints = order.map((i) => hints[i] || '');
-    q.correct = q.options.indexOf(right);
+    q.correct = packCorrect(right.map((i) => place.get(i)));
   }
   return quiz;
 }
@@ -653,10 +656,25 @@ function optionFilled(q, i) {
   return !!String(q.options[i] || '').trim() || !!(q.optionMedia && q.optionMedia[i]);
 }
 
+/* One right answer, or several. A maker can tick more than one option - two
+   spellings that are both fine, or every option at once for a question meant
+   as a gift to the whole room. Stored as a bare number while there is exactly
+   one, so every quiz written before this reads back unchanged. */
+function rightSet(q) {
+  const raw = Array.isArray(q.correct) ? q.correct : [q.correct];
+  return raw.filter((i) => Number.isInteger(i) && i >= 0);
+}
+function isRight(q, pick) { return rightSet(q).includes(pick); }
+function packCorrect(list) {
+  const clean = [...new Set(list)].sort((a, b) => a - b);
+  return clean.length === 0 ? null : clean.length === 1 ? clean[0] : clean;
+}
+
 function questionReady(q) {
   const filled = q.options.filter((_, i) => optionFilled(q, i));
+  const right = rightSet(q);
   return !!q.text.trim() && filled.length >= MIN_OPTIONS
-    && Number.isInteger(q.correct) && optionFilled(q, q.correct);
+    && right.length > 0 && right.every((i) => optionFilled(q, i));
 }
 function tieReady(tb) {
   return !!(tb && tb.text.trim() && tb.answer !== null && Number.isFinite(Number(tb.answer)));
@@ -785,7 +803,7 @@ function revealedCount(live, qCount) {
 function scoreFor(userId, quiz, live) {
   const mine = live.answers[userId] || {};
   let score = 0;
-  quiz.questions.forEach((q, i) => { if (mine[i] === q.correct) score++; });
+  quiz.questions.forEach((q, i) => { if (isRight(q, mine[i])) score++; });
   return score;
 }
 
@@ -990,7 +1008,7 @@ function myScoreSoFar(team, live, userId, revealed) {
   if (!live || !quiz || upTo <= 0) return { right: 0, of: 0 };
   const mine = live.answers[userId] || {};
   let right = 0;
-  for (let i = 0; i < upTo; i++) if (mine[i] === quiz.questions[i].correct) right++;
+  for (let i = 0; i < upTo; i++) if (isRight(quiz.questions[i], mine[i])) right++;
   return { right, of: upTo };
 }
 
@@ -1719,8 +1737,7 @@ async function api(req, res, path) {
       const options = (Array.isArray(q.options) ? q.options : [])
         .slice(0, MAX_OPTIONS).map((o) => String(o == null ? '' : o));
       while (options.length < MIN_OPTIONS) options.push('');
-      const correct = Number.isInteger(q.correct) && q.correct >= 0 && q.correct < options.length
-        ? q.correct : null;
+      const correct = packCorrect(rightSet(q).filter((i) => i < options.length));
       // One media slot per option, however mangled the array arrived.
       const src = Array.isArray(q.optionMedia) ? q.optionMedia : [];
       const optionMedia = options.map((_, i) => cleanMedia(team, src[i]));
