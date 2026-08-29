@@ -25,6 +25,7 @@
     if (open) open.remove();
 
     var master = QC.isMaster();
+    followClock(QC.state && QC.state.live);
     var view = master ? presenter() : player();
     /* A clip whose slide has gone stops. Detaching an <audio> from the page
        does not pause it in Chrome, and this one is cached on purpose so that a
@@ -48,7 +49,9 @@
     /* The way out. A sibling of the card rather than part of it: the card gets
        scaled to fit and this must not shrink with it, and every player screen
        is built by a different function - one button here beats ten. */
-    var frame = el('div.play-fit', [view, leaveButton()]);
+    /* The countdown, on a player's screen as well: siblings of the card, like
+       the way out is, so neither shrinks when the card is scaled to fit. */
+    var frame = el('div.play-fit', [view, leaveButton(), autoClock(true)]);
     requestAnimationFrame(function () { fitPlay(frame); });
     return frame;
   };
@@ -752,6 +755,12 @@
 
     if (same) body.classList.add('still');
     autoSync();
+    /* The switch is remembered in this browser, so a quiz can start with it
+       already on and nothing yet written down. One posting sets it going for
+       the room; after that the server winds it slide by slide. */
+    if (auto.on && !auto.winding && autoRuns(L) && !(L.clock && L.clock.on)) {
+      tellClock(true, true, auto.secs * 1000);
+    }
     var wrap = el('div.stage-live');
     /* The slide sits on a canvas of its own rather than bleeding into the
        window. It gives the content an edge to sit inside, which is what makes
@@ -1257,8 +1266,8 @@
      endings - nobody wants those advancing on a timer. */
   var AUTO_KEY = 'fq.auto', AUTO_SECS_KEY = 'fq.autoSecs';
   var AUTO_CHOICES = [10, 15, 20, 30, 45, 60, 90];
-  var auto = { on: false, secs: 30, key: '', deadline: 0, left: 0,
-               running: false, timer: null, sending: false };
+  var auto = { on: false, secs: 30, deadline: 0, left: 0,
+               running: false, timer: null, sending: false, winding: false };
   try {
     auto.on = localStorage.getItem(AUTO_KEY) === '1';
     var savedSecs = parseInt(localStorage.getItem(AUTO_SECS_KEY), 10);
@@ -1267,31 +1276,65 @@
 
   var clockEls = null;
 
-  function slideKey(L) { return L.phase + ':' + L.index; }
   function autoRuns(L) { return auto.on && !!L && (L.phase === 'q' || L.phase === 'a'); }
 
   /* A new slide winds it up and sets it going. Pressing Next by hand lands
      here too, which is what makes the two ways of running a quiz agree. */
-  function autoArm(L) {
-    auto.key = slideKey(L);
-    auto.left = auto.secs * 1000;
-    auto.deadline = Date.now() + auto.left;
-    auto.running = true;
+  /* Wound, started and stopped on the server; read here. Every screen seeds
+     from the same posting and counts down to the same instant, so the watch on
+     a phone and the watch on the projector step together.
+
+     Acted on once per winding: the view is rebuilt every time anybody answers,
+     and re-seeding on each of those would stand the countdown still. */
+  var clockSeen = '';
+
+  function followClock(L) {
+    var c = L && L.clock;
+    if (!c || !c.on) {
+      clockSeen = '';
+      if (!QC.isMaster()) auto.on = false;   // the master's switch is its own
+      auto.running = false;
+      return;
+    }
+    var seen = L.id + ':' + c.n;
+    if (seen === clockSeen) return;
+    clockSeen = seen;
+
+    auto.winding = false;
+    auto.on = true;
+    auto.secs = c.secs;
+    auto.running = !!c.running;
     auto.sending = false;
+    if (c.running) {
+      // The deadline was written on the server's clock; read it on this one.
+      auto.deadline = c.endsAt + (QC.skew || 0);
+      auto.left = Math.max(0, auto.deadline - Date.now());
+    } else {
+      auto.left = Math.max(0, c.left);
+      auto.deadline = Date.now() + auto.left;
+    }
+    autoSync();
+  }
+
+  /* Said to the server, which tells everyone else. Only the quiz master winds
+     it: the switch, the length, and the two pushers. */
+  function tellClock(on, running, leftMs) {
+    if (!QC.isMaster()) return;
+    auto.winding = true;                    // in flight; do not ask twice
+    QC.net.setClock({
+      on: on, running: running, secs: auto.secs,
+      left: Math.max(0, leftMs === undefined ? auto.left : leftMs) / 1000
+    }).catch(function () { auto.winding = false; });
   }
 
   function autoGo() {
-    if (auto.left <= 0) auto.left = auto.secs * 1000;   // run down: wind it again
-    auto.deadline = Date.now() + auto.left;
-    auto.running = true;
     unlockSound();
-    paintClock();
+    // Run down: wind it again rather than starting a countdown of nothing.
+    tellClock(true, true, auto.left > 0 ? auto.left : auto.secs * 1000);
   }
 
   function autoHalt() {
-    auto.left = Math.max(0, auto.deadline - Date.now());
-    auto.running = false;
-    paintClock();
+    tellClock(true, false, Math.max(0, auto.deadline - Date.now()));
   }
 
   function autoSync() {
@@ -1301,20 +1344,22 @@
 
   function autoTick() {
     var L = QC.state && QC.state.live;
-    if (!auto.on || !Live.isRunning() || !QC.isMaster()) { auto.key = ''; autoSync(); return; }
-    if (!autoRuns(L)) { auto.key = ''; return; }
-    if (auto.key !== slideKey(L)) autoArm(L);
+    if (!auto.on || !Live.isRunning()) { autoSync(); return; }
+    if (!autoRuns(L)) return;
+
     if (auto.running) auto.left = Math.max(0, auto.deadline - Date.now());
     paintClock();
-    if (!auto.running || auto.left > 0 || auto.sending) return;
 
+    // Everybody watches it; the quiz master is the one who acts at nought.
+    if (!QC.isMaster() || !auto.running || auto.left > 0 || auto.sending) return;
     auto.running = false;
     auto.sending = true;
     QC.net.advance().catch(function (e) {
-      // A refused advance must not become a toast every tenth of a second:
-      // wind it up again and let the next go round try.
+      /* A refused advance must not become a toast every tenth of a second.
+         The next slide winds itself on the server; this one has to be asked
+         for again. */
       QC.toast(e.message);
-      autoArm(L);
+      tellClock(true, true, auto.secs * 1000);
     });
   }
 
@@ -1437,18 +1482,19 @@
 
   /* The watch itself, top right of the slide, with its two pushers above it.
      Wound by the slide, started and stopped by hand. */
-  function autoClock() {
+  function autoClock(own) {
     var L = live();
     if (!autoRuns(L)) { clockEls = null; return null; }
 
     var face = el('div.wt-glass', { html: clockFace() });
-    var start = el('button.wt-push', { type: 'button', text: 'Start',
+    // Nobody but the quiz master winds it, so nobody else is offered pushers.
+    var start = own ? null : el('button.wt-push', { type: 'button', text: 'Start',
       'aria-label': 'Start the clock', onclick: autoGo });
-    var stop = el('button.wt-push', { type: 'button', text: 'Stop',
+    var stop = own ? null : el('button.wt-push', { type: 'button', text: 'Stop',
       'aria-label': 'Stop the clock', onclick: autoHalt });
 
-    var box = el('div.watch', { role: 'timer' }, [
-      el('div.wt-pushers', [start, stop]),
+    var box = el('div.watch' + (own ? '.own' : ''), { role: 'timer' }, [
+      own ? null : el('div.wt-pushers', [start, stop]),
       face
     ]);
 
@@ -1480,10 +1526,10 @@
       clockEls.hands.style.transform = 'rotate(' + (gone * 360).toFixed(2) + 'deg)';
       if (!silent && auto.running) tickSound(sec % 2 === 0);
     }
-    clockEls.box.classList.toggle('low', left <= 5000);
+    clockEls.box.classList.toggle('low', left > 0 && left <= 5000);
     clockEls.box.classList.toggle('halted', !auto.running);
-    clockEls.start.disabled = auto.running;
-    clockEls.stop.disabled = !auto.running;
+    if (clockEls.start) clockEls.start.disabled = auto.running;
+    if (clockEls.stop) clockEls.stop.disabled = !auto.running;
   }
 
   /* The switch, beside the button it takes over from. */
@@ -1493,9 +1539,10 @@
     toggle.addEventListener('change', function () {
       auto.on = toggle.checked;
       try { localStorage.setItem(AUTO_KEY, auto.on ? '1' : '0'); } catch (e) {}
-      auto.key = '';                        // whichever way, this slide starts over
       if (auto.on) unlockSound();           // the press is the gesture that lets it tick
       autoSync();
+      // On, it is wound for everybody; off, it leaves every screen at once.
+      tellClock(auto.on, true, auto.secs * 1000)
       QC.render();                          // the watch arrives or leaves with it
     });
 
@@ -1505,7 +1552,7 @@
     pick.addEventListener('change', function () {
       auto.secs = Number(pick.value);
       try { localStorage.setItem(AUTO_SECS_KEY, String(auto.secs)); } catch (e) {}
-      auto.key = '';                        // wound again at the new length
+      if (auto.on) tellClock(true, true, auto.secs * 1000);   // wound at the new length
     });
 
     /* The switch is its own label and the picker sits outside it: a click on a
@@ -1665,6 +1712,9 @@
           type: 'button',
           disabled: closed,
           onclick: function () {
+            // A browser will not make a sound until it has been touched, and
+            // this is the touch: the clock can tick from here on.
+            unlockSound();
             QC.net.answer(o.i).catch(function (e) { QC.toast(e.message); });
           }
         }, [

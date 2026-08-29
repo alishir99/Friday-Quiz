@@ -1101,7 +1101,12 @@ function stateFor(userId, team) {
       quizReady: quizReady(up.quiz)
     } : null,
     live: null,
-    me: userId
+    me: userId,
+    /* This machine's clock, so a browser can work out how far its own is off
+       and read a deadline that was written here. Every screen in the quiz
+       counts the same countdown down to the same instant that way, instead of
+       each starting its own when the message happened to arrive. */
+    now: Date.now()
   };
 
   if (live) {
@@ -1145,6 +1150,9 @@ function stateFor(userId, team) {
       // Together these are what closes a question the slides have gone back to.
       asked: live.asked ?? -1,
       shown: live.shown ?? -1,
+      // The countdown, so every player watches the same one rather than the
+      // quiz master watching it alone.
+      clock: live.clock || null,
       questionCount: qCount,
       reveal: revealMode(live),
       // Stepped out. The client stops taking the screen over and offers a way
@@ -1154,6 +1162,38 @@ function stateFor(userId, team) {
     };
   }
   return out;
+}
+
+/* THE COUNTDOWN, which the server owns rather than the quiz master's browser.
+
+   Two things went wrong while it was theirs. A player's watch started its
+   thirty seconds when the message reached them, so it ran a beat behind the
+   one on the big screen; and the clock was cleared on every advance and posted
+   again a moment later, so at each rollover it blinked off every screen and
+   came back. Written down here it is one countdown with one deadline: every
+   screen reads the same instant off it, and a new slide is wound in the same
+   breath as the slide itself, so there is nothing to blink.
+
+   `endsAt` is this machine's clock. `left` is what remains while it is stopped,
+   which has no deadline to speak of. `n` counts the windings, so a browser can
+   tell a fresh one from the same state arriving again on the next push. */
+const CLOCK_MIN = 5, CLOCK_MAX = 600;
+
+function clockSecs(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) ? Math.min(CLOCK_MAX, Math.max(CLOCK_MIN, n)) : 30;
+}
+
+function windClock(live, secs, running, leftMs) {
+  const was = live.clock;
+  return {
+    on: true,
+    secs,
+    running,
+    endsAt: running ? Date.now() + leftMs : 0,
+    left: running ? 0 : Math.max(0, leftMs),
+    n: ((was && was.n) || 0) + 1
+  };
 }
 
 /* Someone joins the room. The one door in, so a player who has stepped out
@@ -1948,6 +1988,13 @@ async function api(req, res, path) {
     /* Two high-water marks, because stepping back is exactly the move that
        would otherwise clear them: how far the questions have got, and how far
        the answers have. Neither goes down. */
+    /* A new slide is a new countdown, wound here in the same breath as the
+       slide. Clearing it and waiting for the quiz master's browser to post
+       another was what made it blink off every screen at each rollover. */
+    if (team.live.clock && team.live.clock.on) {
+      team.live.clock = windClock(team.live, team.live.clock.secs, true,
+                                  team.live.clock.secs * 1000);
+    }
     if (team.live.phase === 'q') {
       team.live.asked = Math.max(team.live.asked ?? -1, team.live.index);
     }
@@ -1956,6 +2003,31 @@ async function api(req, res, path) {
     }
     broadcast(team);
     return json(res, 200, { ok: true, phase: team.live.phase, index: team.live.index });
+  }
+
+  /* The countdown on the big screen, so it is on everybody's screen.
+
+     A clock only means anything if it is the same clock: a player watching
+     their own thirty seconds, started when their phone happened to redraw,
+     would be counting something else. So the quiz master's posts it - wound,
+     started, stopped - and every other device follows.
+
+     `left` is what remained at the moment of the post; each device counts down
+     from there on its own, which is right to the width of a network hop and
+     needs no clocks to agree. `n` counts the posts, so a device can tell a
+     fresh one from the same state arriving again on the next push. */
+  if (path === '/api/live/clock' && req.method === 'POST') {
+    if (!requireUser()) return;
+    if (!runsLive()) return json(res, 403, { error: 'Only the quiz maker runs the clock' });
+    if (!team.live) return json(res, 400, { error: 'Nothing running' });
+    const { on, running, left, secs } = await readBody(req);
+    const secsNum = clockSecs(secs);
+    team.live.clock = on
+      ? windClock(team.live, secsNum, running === undefined ? true : !!running,
+                  Number(left) >= 0 ? Number(left) * 1000 : secsNum * 1000)
+      : null;
+    broadcast(team);
+    return json(res, 200, { ok: true });
   }
 
   if (path === '/api/live/answer' && req.method === 'POST') {

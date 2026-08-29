@@ -185,3 +185,31 @@ test('a toolbar button writes the markers and keeps the words selected', () => {
   assert.equal(md('heading', 'Scoring', 0, 0).value, '## Scoring');
   assert.equal(md('number', '- one\n- two', 0, 11).value, '1. one\n2. two', 'one list becomes the other');
 });
+
+/* What a push is allowed to skip. A player is only redrawn when something they
+   can see has changed, and anything new in the live state has to be weighed
+   here or it never reaches them: the countdown was invisible until the page
+   was reloaded, because a clock arriving looked like a counter ticking over. */
+test('a push that carries the countdown redraws, a push that carries a counter does not', () => {
+  const same = () => ({
+    live: { phase: 'q', index: 0, reveal: 'end', committed: false, answeredCount: 0,
+            myAnswers: {}, myTieGuess: null, myScore: { right: 0, of: 0 },
+            players: ['u1', 'u2'], coin: null, ranking: null, clock: null }
+  });
+  const skip = sandbox.QC.net.onlyCountsMoved;
+
+  const was = same(), now = same();
+  assert.equal(skip(was, now), true, 'nothing moved at all');
+
+  now.live.answeredCount = 3;
+  assert.equal(skip(was, now), true, 'one more person has answered, and that is all');
+
+  now.live.clock = { on: true, running: true, left: 30, secs: 30, n: 1 };
+  assert.equal(skip(was, now), false, 'the countdown turning up is not a counter');
+
+  const ticked = same();
+  ticked.live.clock = { on: true, running: true, left: 30, secs: 30, n: 1 };
+  const stopped = same();
+  stopped.live.clock = { on: true, running: false, left: 12, secs: 30, n: 2 };
+  assert.equal(skip(ticked, stopped), false, 'and neither is it stopping');
+});

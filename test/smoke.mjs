@@ -1436,3 +1436,62 @@ test('a question can have more than one right answer', async () => {
   await call('/api/live/stop', { method: 'POST', as: 'ali' });
   await call('/api/live/reveal', { method: 'POST', body: { mode: 'end' }, as: 'ali' });
 });
+
+/* A countdown only means anything if everyone is watching the same one, so the
+   server owns it: one deadline, written on its clock, read by every screen.
+   The quiz master winds it and nobody else may; a new slide is wound in the
+   same breath as the slide, so it never blinks off the screen at a rollover. */
+test('the countdown belongs to the server, and every screen reads the same one', async () => {
+  const state = await stateAs('ali');
+  await call('/api/roles', { method: 'POST', body: { quizMasterId: state.me }, as: 'ali' });
+  await call('/api/quiz', {
+    method: 'PUT', as: 'ali',
+    body: { quiz: { topic: 'Time',
+      questions: [
+        { id: 'q1', text: 'One?', options: ['a', 'b'], correct: 0 },
+        { id: 'q2', text: 'Two?', options: ['a', 'b'], correct: 0 }
+      ],
+      tieBreaker: { text: 'n?', unit: '', answer: 3 } } }
+  });
+  await call('/api/live/start', { method: 'POST', as: 'ali' });
+  await advanceTo('q');
+
+  const nope = await call('/api/live/clock', {
+    method: 'POST', body: { on: true, running: true, secs: 30 }, as: 'bea' });
+  assert.equal(nope.status, 403, 'a player cannot wind it');
+
+  await call('/api/live/clock', { method: 'POST', body: { on: true, running: true, secs: 30 }, as: 'ali' });
+  const seen = await stateAs('bea');
+  const clock = seen.live.clock;
+  assert.equal(clock.running, true, 'it is running');
+  assert.equal(clock.secs, 30, 'for this long');
+  /* The deadline is an instant on the server's clock, and the state carries
+     that clock too - which is the whole trick: a browser reads the one against
+     the other instead of starting its own the moment the message lands. */
+  const leftForBea = (clock.endsAt - seen.now) / 1000;
+  assert.ok(leftForBea > 28 && leftForBea <= 30, 'and a player reads what is left of it: ' + leftForBea);
+
+  // Stopped: no deadline to speak of, just what remains.
+  await call('/api/live/clock', { method: 'POST', body: { on: true, running: false, left: 12, secs: 30 }, as: 'ali' });
+  const held = (await stateAs('bea')).live.clock;
+  assert.equal(held.running, false, 'stopped is stopped everywhere');
+  assert.equal(held.left, 12000, 'holding what was left of it');
+  assert.ok(held.n > clock.n, 'each winding counts, so the same one is never re-seeded');
+
+  // The next slide is wound with the slide, not cleared and posted again.
+  await call('/api/live/advance', { method: 'POST', as: 'ali' });
+  const next = await stateAs('bea');
+  assert.equal(next.live.clock.running, true, 'a new slide winds it and sets it going');
+  assert.ok((next.live.clock.endsAt - next.now) / 1000 > 28, 'from the top');
+  assert.equal(next.live.clock.secs, 30, 'at the length that was set');
+
+  // Switched off, it leaves every screen rather than freezing on one.
+  await call('/api/live/clock', { method: 'POST', body: { on: false }, as: 'ali' });
+  assert.equal((await stateAs('bea')).live.clock, null, 'switched off, it is gone');
+
+  // And an absurd length is not a countdown anybody asked for.
+  await call('/api/live/clock', { method: 'POST', body: { on: true, running: true, secs: 99999 }, as: 'ali' });
+  assert.equal((await stateAs('ali')).live.clock.secs, 600, 'clamped to something a quiz might use');
+
+  await call('/api/live/stop', { method: 'POST', as: 'ali' });
+});

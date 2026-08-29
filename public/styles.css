@@ -1160,9 +1160,20 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
   .watch.low .wt-glass { animation: none; }
 }
 
-/* On a phone the stage bar is cramped and the slide is small; the watch would
-   sit on top of the question. It belongs to the projector. */
-@media (max-width: 700px) { .watch { display: none; } }
+/* A player's own countdown sits exactly where the projector's does, because it
+   is the same clock and the eye should not have to look for it twice. No
+   pushers: winding it is the quiz master's job. On a phone it comes down a
+   size, or it would sit on top of the question rather than beside it. */
+.watch.own { top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); }
+@media (max-width: 700px) {
+  .watch.own .wt-glass { width: clamp(58px, 17vw, 84px); height: clamp(58px, 17vw, 84px); }
+  .watch.own { gap: 0; }
+}
+
+/* On a phone the projector's watch would sit on top of the question, and the
+   stage bar has no room for its switch. The player's own stays: it is in the
+   corner the card leaves empty, and it is the whole point on a small screen. */
+@media (max-width: 700px) { .watch:not(.own) { display: none; } }
 
 /* Stage scoreboard */
 .stage-board { display: flex; flex-direction: column; gap: clamp(8px, 1.1vh, 14px); margin-top: clamp(20px,3vh,40px); }
@@ -2555,11 +2566,15 @@ body.playing:not(.presenting) .play-fit > .play {
 /* The player's way out of a running quiz. Top corner, deliberately small: it
    is the one control on the screen that is not the question, and the answers
    are what people are meant to be tapping. Outside the card, so the fit pass
-   that shrinks the card cannot shrink this out of reach. */
+   that shrinks the card cannot shrink this out of reach.
+
+   The left-hand corner, because the right one is the clock's - on the
+   projector and here alike, and the clock is the one that has to be found in a
+   hurry. */
 .play-leave {
   position: absolute; z-index: 2;
   top: calc(10px + env(safe-area-inset-top));
-  right: calc(10px + env(safe-area-inset-right));
+  left: calc(10px + env(safe-area-inset-left));
   opacity: .55;
 }
 .play-leave:hover, .play-leave:focus-visible { opacity: 1; }

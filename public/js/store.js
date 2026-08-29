@@ -132,6 +132,10 @@
     return s && s.upcoming ? String(s.upcoming.topic || '').trim() : '';
   };
 
+  /* Milliseconds this browser's clock is ahead of the server's, filled in on
+     every push. Nought until the first one lands, which is the right guess. */
+  QC.skew = 0;
+
   /* quiz completeness (mirrors the server's rules) */
 
   /* An option is real once it has words, a picture, or both - four photos with

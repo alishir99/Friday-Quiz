@@ -57,6 +57,8 @@
   Net.setActive = function (userId, active) {
     return Net.call('api/admin/set-active', 'POST', { userId: userId, active: active });
   };
+  // The countdown, from the big screen to everybody else's screen.
+  Net.setClock = function (state) { return Net.call('api/live/clock', 'POST', state); };
   Net.setRules = function (text) { return Net.call('api/rules', 'POST', { text: text }); };
   // Site admin only: the other teams on this install.
   Net.teams = function () { return Net.call('api/teams'); };
@@ -135,6 +137,10 @@
   function receive(state) {
     var was = QC.state;
     QC.state = state;
+    /* How far this browser's clock is from the server's, near enough: the
+       error is the one-way trip, tens of milliseconds. It is what lets a
+       deadline written on the server be read here as a local instant. */
+    if (state && state.now) QC.skew = Date.now() - state.now;
     // Redrawing under an open dialog would tear it out from under the user.
     var sheetOpen = !document.getElementById('sheetHost').hidden;
     var editing = QC.route === 'build' && was && state && was.me === state.me;
@@ -152,7 +158,13 @@
   }
 
   /* True when the game is on the same slide, showing the same thing, and the
-     only difference is how many people have answered so far. */
+     only difference is how many people have answered so far.
+
+     Exported because it decides whether a player is redrawn at all, and
+     everything new that lands in the live state has to be weighed here or it
+     silently never reaches them. */
+  Net.onlyCountsMoved = onlyCountsMoved;
+
   function onlyCountsMoved(a, b) {
     if (!a || !b || !a.live || !b.live) return false;
     var x = a.live, y = b.live;
@@ -162,6 +174,11 @@
     if (JSON.stringify(x.myAnswers) !== JSON.stringify(y.myAnswers)) return false;
     if (x.myTieGuess !== y.myTieGuess) return false;
     if (JSON.stringify(x.myScore) !== JSON.stringify(y.myScore)) return false;
+    /* The countdown arriving, stopping, or being wound again is a change to
+       what is on the screen. Without this a player was never redrawn for it -
+       the clock only turned up if something else happened to redraw them,
+       which meant reloading the page. */
+    if (JSON.stringify(x.clock) !== JSON.stringify(y.clock)) return false;
     // A call or a landed coin changes the slide, not just a counter.
     if (JSON.stringify(x.coin) !== JSON.stringify(y.coin)) return false;
     // A roster change shows up as faces in the lobby, so that redraws too.
