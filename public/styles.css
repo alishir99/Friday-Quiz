@@ -1085,6 +1085,13 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .wt-push:hover { background: linear-gradient(#ffffff, #eef2f6); }
 .wt-push:active { transform: translateY(1px); }
 .wt-push[disabled] { opacity: .34; pointer-events: none; }
+/* The one pusher that is a picture rather than a word: it says the same thing
+   in every language, and it is pressed by people who are not reading. */
+.wt-mute { padding: 0; width: 34px; display: grid; place-items: center; }
+/* A player presses this one with a thumb, so it gets a thumb's worth of room. */
+.watch.own .wt-push { min-height: 32px; width: 40px; }
+.wt-mute svg { width: 16px; height: 16px; display: block; }
+.wt-mute.off { color: #9aa3ac; background: linear-gradient(#f4f6f8, #dde2e7); }
 
 /* The crystal: the case shadow and the glare across the top live here, so the
    dial itself stays flat vector and the shine is one gradient over all of it. */
@@ -1167,7 +1174,7 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .watch.own { top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); }
 @media (max-width: 700px) {
   .watch.own .wt-glass { width: clamp(58px, 17vw, 84px); height: clamp(58px, 17vw, 84px); }
-  .watch.own { gap: 0; }
+  .watch.own { gap: 4px; }
 }
 
 /* On a phone the projector's watch would sit on top of the question, and the

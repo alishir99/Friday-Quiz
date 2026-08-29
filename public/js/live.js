@@ -1371,6 +1371,22 @@
      like; alternating the pitch by a hair is the tick and the tock. */
   var actx = null;
 
+  /* Whether this device ticks. Not everyone wants a clock in their ear for a
+     whole quiz, and it is a per-person thing rather than a decision for the
+     room: the button is on every watch, and it silences that screen only. */
+  var TICK_KEY = 'fq.tick';
+  var tickOn = true;
+  try { tickOn = localStorage.getItem(TICK_KEY) !== '0'; } catch (e) {}
+
+  var SOUND_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    + '<path d="M11 5 6.5 8.8H3.6v6.4h2.9L11 19z" fill="currentColor"/>'
+    + '<path d="M15.2 9.1a4 4 0 0 1 0 5.8M18 6.4a7.8 7.8 0 0 1 0 11.2" '
+    + 'stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
+  var MUTED_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    + '<path d="M11 5 6.5 8.8H3.6v6.4h2.9L11 19z" fill="currentColor"/>'
+    + '<path d="m15.4 9.6 5 4.8m0-4.8-5 4.8" stroke="currentColor" '
+    + 'stroke-width="1.9" stroke-linecap="round"/></svg>';
+
   function unlockSound() {
     try {
       if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1379,7 +1395,7 @@
   }
 
   function tickSound(high) {
-    if (!actx) return;                      // nothing has been pressed yet
+    if (!tickOn || !actx) return;           // silenced, or nothing pressed yet
     try {
       var t = actx.currentTime;
       var osc = actx.createOscillator();
@@ -1480,7 +1496,31 @@
     return CLOCK_HTML;
   }
 
-  /* The watch itself, top right of the slide, with its two pushers above it.
+  /* Silence, or not, for this screen. A pusher like the other two, so it reads
+     as part of the watch rather than as a setting bolted to it. */
+  function mutePusher() {
+    var btn = el('button.wt-push.wt-mute', { type: 'button' });
+    var paint = function () {
+      btn.innerHTML = tickOn ? SOUND_ICON : MUTED_ICON;
+      btn.setAttribute('aria-pressed', tickOn ? 'false' : 'true');
+      var say = tickOn ? 'Silence the ticking' : 'Let it tick again';
+      btn.setAttribute('aria-label', say);
+      btn.setAttribute('title', say);
+      btn.classList.toggle('off', !tickOn);
+    };
+    btn.addEventListener('click', function () {
+      tickOn = !tickOn;
+      try { localStorage.setItem(TICK_KEY, tickOn ? '1' : '0'); } catch (e) {}
+      // Turning it back on is itself the press a browser wants before it will
+      // make any sound at all.
+      if (tickOn) unlockSound();
+      paint();
+    });
+    paint();
+    return btn;
+  }
+
+  /* The watch itself, top right of the slide, with its pushers above it.
      Wound by the slide, started and stopped by hand. */
   function autoClock(own) {
     var L = live();
@@ -1494,7 +1534,7 @@
       'aria-label': 'Stop the clock', onclick: autoHalt });
 
     var box = el('div.watch' + (own ? '.own' : ''), { role: 'timer' }, [
-      own ? null : el('div.wt-pushers', [start, stop]),
+      el('div.wt-pushers', own ? [mutePusher()] : [start, stop, mutePusher()]),
       face
     ]);
 
@@ -1534,7 +1574,7 @@
 
   /* The switch, beside the button it takes over from. */
   function autoControl() {
-    var toggle = el('input', { type: 'checkbox', 'aria-label': 'Run the clock and move on by itself' });
+    var toggle = el('input', { type: 'checkbox', 'aria-label': 'Move on to the next slide by itself' });
     toggle.checked = auto.on;
     toggle.addEventListener('change', function () {
       auto.on = toggle.checked;
@@ -1560,7 +1600,7 @@
        sometimes toggles the thing next to it is worse than one that never
        does. */
     return el('div.auto-ctl' + (auto.on ? '.on' : ''), [
-      el('label.switch', [toggle, el('span.track', [el('span.knob')]), el('span.auto-t', { text: 'Clock' })]),
+      el('label.switch', [toggle, el('span.track', [el('span.knob')]), el('span.auto-t', { text: 'Auto next' })]),
       pick
     ]);
   }
