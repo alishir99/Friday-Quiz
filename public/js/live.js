@@ -31,7 +31,7 @@
        redraw does not restart it - which means it outlives its own slide
        unless somebody says otherwise. Next frame, once the swap has happened,
        anything no longer on the page is hushed. */
-    requestAnimationFrame(hushDetachedAudio);
+    requestAnimationFrame(hushDetached);
     if (master) return view;
 
     /* A player's screen is a canvas too.
@@ -105,11 +105,25 @@
     if (frame) Live.fitInto(frame.querySelector('.play'));
   });
 
-  function hushDetachedAudio() {
-    Object.keys(audioCache).forEach(function (url) {
-      var a = audioCache[url];
+  function hushDetached() {
+    Object.keys(clipCache).forEach(function (url) {
+      var a = clipCache[url];
       if (!a.isConnected && !a.paused) a.pause();
     });
+  }
+
+  /* One element per clip, wherever it is being played - the projector's own
+     card and a player's phone both come here. A fresh element on every redraw
+     would start the clip again from nought every time somebody's phone posted
+     an answer, and there would be no single thing to hush when the slide moves
+     on. */
+  function clipEl(url, kind) {
+    var node = clipCache[url];
+    if (!node) {
+      node = el(kind === 'video' ? 'video' : 'audio', { src: url, preload: 'metadata' });
+      clipCache[url] = node;
+    }
+    return node;
   }
 
   function quiz() { return QC.state.upcoming.quiz; }
@@ -174,17 +188,14 @@
 
      Deliberately no title anywhere. The file is called whatever the quiz maker
      saved it as, and that is very often the answer. */
-  var audioCache = {};
+  var clipCache = {};
 
   function nowPlaying(url) {
     /* The same element every time this slide is drawn. A fresh <audio> would
        start the clip again from nought the moment anybody's phone reconnected,
        which on a slide the room is listening to is the whole ballgame. */
-    var audio = audioCache[url];
-    if (!audio) {
-      audio = el('audio', { src: url, preload: 'auto' });
-      audioCache[url] = audio;
-    }
+    var audio = clipEl(url, 'audio');
+    audio.controls = false;                 // the card below is its controls
 
     var card = el('div.np');
     var icon = el('button.np-play', {
@@ -264,16 +275,26 @@
     if (m.kind === 'image') {
       return el('img.play-media', { src: url, alt: 'Picture for this question' });
     }
-    /* A clip is running on the projector and not on this phone, so all this
-       screen can do is point at it. A row of bars rising and falling says
-       "something is playing over there" the moment you glance down, where a
-       loudspeaker glyph just sits there - and it is drawn rather than typed,
-       so it looks the same on every handset instead of whatever that phone
-       happens to ship for an emoji. */
-    return el('div.play-media-note', [
-      ribbon('sm'),
+    /* The clip again, here, with this device's own controls.
+
+       It used to say "listen to the big screen", which assumes there is one.
+       Played over a meeting there is not: the big screen is somebody's shared
+       window, and it only carries sound at all if whoever is sharing turned
+       that on - so half a quiz can sit there hearing nothing. This is the way
+       out of that, and it works the same for someone in another country.
+
+       Silent until it is pressed. In a real room, twenty devices starting a
+       half-second apart is exactly the mess the old note existed to avoid, so
+       nothing here starts on its own. */
+    var clip = clipEl(url, m.kind);
+    clip.className = 'media-player';
+    clip.controls = true;
+    if (m.kind === 'video') clip.setAttribute('playsinline', '');
+    return el('div.play-media-note.own', [
+      clip,
       el('span', { text: m.kind === 'audio'
-        ? 'Listen to the big screen' : 'Watch the big screen' })
+        ? 'Playing on the big screen too. Press play if you cannot hear it there.'
+        : 'Playing on the big screen too. Press play to watch it here.' })
     ]);
   }
 
@@ -704,6 +725,7 @@
     var L = live();
     var body;
     tally = null;               // a fresh slide invalidates the old handles
+    clockEls = null;
     var key = L.phase + ':' + L.index;
     var same = key === lastSlide;
     lastSlide = key;
@@ -723,11 +745,15 @@
     }
 
     if (same) body.classList.add('still');
+    autoSync();
     var wrap = el('div.stage-live');
     /* The slide sits on a canvas of its own rather than bleeding into the
        window. It gives the content an edge to sit inside, which is what makes
        the scaling read as deliberate instead of as things drifting about. */
-    wrap.appendChild(el('div.slide-frame', body));
+    var frame = el('div.slide-frame', body);
+    var watch = autoClock();
+    if (watch) frame.appendChild(watch);
+    wrap.appendChild(frame);
     wrap.appendChild(presenterBar());
     /* Laid out first, measured second. The slide has to be in the document and
        have its fonts before anything can know whether it fits. */
@@ -1212,6 +1238,280 @@
 
   /* Presenter controls */
 
+  /* THE CLOCK: the quiz running itself for a while.
+
+     A quiz master with a room to read should not also be pressing Next every
+     thirty seconds. This lives entirely in the projector's own browser: the
+     watch in the corner is what everybody is already looking at, so there is
+     nothing to broadcast, no clocks to keep in step, and no phone left showing
+     a timer for a question that moved on without it.
+
+     Only ever on a question or an answer slide. The tiebreaker takes as long
+     as it takes to type a number, and the board, the coin and the roles are
+     endings - nobody wants those advancing on a timer. */
+  var AUTO_KEY = 'fq.auto', AUTO_SECS_KEY = 'fq.autoSecs';
+  var AUTO_CHOICES = [10, 15, 20, 30, 45, 60, 90];
+  var auto = { on: false, secs: 30, key: '', deadline: 0, left: 0,
+               running: false, timer: null, sending: false };
+  try {
+    auto.on = localStorage.getItem(AUTO_KEY) === '1';
+    var savedSecs = parseInt(localStorage.getItem(AUTO_SECS_KEY), 10);
+    if (AUTO_CHOICES.indexOf(savedSecs) !== -1) auto.secs = savedSecs;
+  } catch (e) {}
+
+  var clockEls = null;
+
+  function slideKey(L) { return L.phase + ':' + L.index; }
+  function autoRuns(L) { return auto.on && !!L && (L.phase === 'q' || L.phase === 'a'); }
+
+  /* A new slide winds it up and sets it going. Pressing Next by hand lands
+     here too, which is what makes the two ways of running a quiz agree. */
+  function autoArm(L) {
+    auto.key = slideKey(L);
+    auto.left = auto.secs * 1000;
+    auto.deadline = Date.now() + auto.left;
+    auto.running = true;
+    auto.sending = false;
+  }
+
+  function autoGo() {
+    if (auto.left <= 0) auto.left = auto.secs * 1000;   // run down: wind it again
+    auto.deadline = Date.now() + auto.left;
+    auto.running = true;
+    unlockSound();
+    paintClock();
+  }
+
+  function autoHalt() {
+    auto.left = Math.max(0, auto.deadline - Date.now());
+    auto.running = false;
+    paintClock();
+  }
+
+  function autoSync() {
+    if (auto.on && !auto.timer) auto.timer = setInterval(autoTick, 100);
+    if (!auto.on && auto.timer) { clearInterval(auto.timer); auto.timer = null; }
+  }
+
+  function autoTick() {
+    var L = QC.state && QC.state.live;
+    if (!auto.on || !Live.isRunning() || !QC.isMaster()) { auto.key = ''; autoSync(); return; }
+    if (!autoRuns(L)) { auto.key = ''; return; }
+    if (auto.key !== slideKey(L)) autoArm(L);
+    if (auto.running) auto.left = Math.max(0, auto.deadline - Date.now());
+    paintClock();
+    if (!auto.running || auto.left > 0 || auto.sending) return;
+
+    auto.running = false;
+    auto.sending = true;
+    QC.net.advance().catch(function (e) {
+      // A refused advance must not become a toast every tenth of a second:
+      // wind it up again and let the next go round try.
+      QC.toast(e.message);
+      autoArm(L);
+    });
+  }
+
+  /* THE TICK
+
+     Synthesised rather than a sound file: it is two dozen milliseconds of
+     click, and a click is cheaper to describe than to download. A narrow band
+     around 2kHz through a very fast decay is what a small escapement sounds
+     like; alternating the pitch by a hair is the tick and the tock. */
+  var actx = null;
+
+  function unlockSound() {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === 'suspended') actx.resume();
+    } catch (e) { actx = null; }
+  }
+
+  function tickSound(high) {
+    if (!actx) return;                      // nothing has been pressed yet
+    try {
+      var t = actx.currentTime;
+      var osc = actx.createOscillator();
+      var band = actx.createBiquadFilter();
+      var gain = actx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(high ? 2300 : 1900, t);
+      band.type = 'bandpass';
+      band.frequency.setValueAtTime(high ? 2300 : 1900, t);
+      band.Q.setValueAtTime(9, t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.16, t + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      osc.connect(band); band.connect(gain); gain.connect(actx.destination);
+      osc.start(t); osc.stop(t + 0.06);
+    } catch (e) {}
+  }
+
+  /* THE DIAL
+
+     A diver's chronograph rather than a dress watch: steel case, a bezel split
+     red and blue, a sunburst navy dial, applied batons in white, and a slim
+     red hand doing the running. The red hand is the point - it is the one
+     thing on the face that moves, so it is the one thing painted to be seen.
+
+     Batons rather than numerals, because the hand goes round once however long
+     the countdown is; a dial numbered to sixty would be lying on every length
+     but one. The seconds left are written in the aperture instead, which is
+     the part anybody actually reads.
+
+     Drawn once and stamped in from a string: sixty ticks, twelve batons and a
+     ninety-line sunburst is a lot of markup to rebuild every time a phone
+     posts an answer. */
+  var CLOCK_HTML = null;
+
+  function clockFace() {
+    if (CLOCK_HTML) return CLOCK_HTML;
+    // The sunburst: fine radial lines, alternating light and dark, so the dial
+    // catches the light on one side the way a brushed one does.
+    var burst = '';
+    for (var a = 0; a < 180; a++) {
+      burst += '<line class="wt-ray' + (a % 2 ? ' wt-ray-d' : '') + '" x1="100" y1="88" x2="100" y2="17"'
+             + ' transform="rotate(' + (a * 2) + ' 100 100)"/>';
+    }
+    var ticks = '';
+    for (var i = 0; i < 60; i++) {
+      var big = i % 5 === 0;
+      ticks += '<line class="wt-tick' + (big ? ' wt-tick-5' : '') + '" x1="100" y1="' + (big ? 20 : 21.5)
+             + '" x2="100" y2="26" transform="rotate(' + (i * 6) + ' 100 100)"/>';
+    }
+    // The bezel's own scale, the way a tachymeter is printed round the outside.
+    var bezel = '';
+    for (var b = 0; b < 24; b++) {
+      bezel += '<line class="wt-bz-tick" x1="100" y1="8" x2="100" y2="' + (b % 2 ? 12 : 14) + '"'
+             + ' transform="rotate(' + (b * 15) + ' 100 100)"/>';
+    }
+    var batons = '';
+    for (var h = 0; h < 12; h++) {
+      batons += '<rect class="wt-baton" x="' + (h % 3 === 0 ? 97.6 : 98.4) + '" y="30" width="'
+              + (h % 3 === 0 ? 4.8 : 3.2) + '" height="' + (h % 3 === 0 ? 13 : 9) + '" rx="1"'
+              + ' transform="rotate(' + (h * 30) + ' 100 100)"/>';
+    }
+    var BZ = 2 * Math.PI * 91;              // the bezel ring, for its two arcs
+    CLOCK_HTML =
+      '<svg class="wt-face" viewBox="0 0 200 200" aria-hidden="true">' +
+        '<defs>' +
+          '<radialGradient id="wt-dial-g" cx="34%" cy="24%" r="86%">' +
+            '<stop offset="0%" stop-color="#3a7ae0"/><stop offset="46%" stop-color="#1c56b8"/>' +
+            '<stop offset="100%" stop-color="#0e3480"/></radialGradient>' +
+          '<linearGradient id="wt-case-g" x1="0" y1="0" x2="0.35" y2="1">' +
+            '<stop offset="0%" stop-color="#e8edf2"/><stop offset="26%" stop-color="#aab4be"/>' +
+            '<stop offset="52%" stop-color="#6f7983"/><stop offset="76%" stop-color="#c4ccd4"/>' +
+            '<stop offset="100%" stop-color="#79838d"/></linearGradient>' +
+        '</defs>' +
+        '<circle class="wt-case" cx="100" cy="100" r="98"/>' +
+        // The bezel: blue most of the way round, red for the first quarter.
+        '<circle class="wt-bz-blue" cx="100" cy="100" r="91"/>' +
+        '<circle class="wt-bz-red" cx="100" cy="100" r="91" stroke-dasharray="' +
+          (BZ / 6).toFixed(2) + ' ' + BZ.toFixed(2) + '"/>' +
+        '<g class="wt-bz-ticks">' + bezel + '</g>' +
+        '<circle class="wt-rim" cx="100" cy="100" r="96.4"/>' +
+        '<circle class="wt-dial" cx="100" cy="100" r="85.5"/>' +
+        '<g class="wt-rays">' + burst + '</g>' +
+        '<g class="wt-ticks">' + ticks + '</g>' +
+        '<g class="wt-batons">' + batons + '</g>' +
+        // The aperture at six, cut into the dial the way a date window is.
+        '<rect class="wt-window" x="80" y="125" width="40" height="28" rx="3"/>' +
+        '<text class="wt-num" x="100" y="146" text-anchor="middle">0</text>' +
+        /* The hand that does the running: a slim red needle with a
+           counterweight, the chronograph seconds hand's job on a real one. */
+        '<g class="wt-hands">' +
+          '<path class="wt-hand" d="M100 26 L102.4 99 L97.6 99 Z"/>' +
+          '<path class="wt-tail" d="M100 118 L102.8 104 L97.2 104 Z"/>' +
+        '</g>' +
+        '<circle class="wt-cap" cx="100" cy="100" r="4.6"/>' +
+        '<circle class="wt-cap-in" cx="100" cy="100" r="1.8"/>' +
+      '</svg>';
+    return CLOCK_HTML;
+  }
+
+  /* The watch itself, top right of the slide, with its two pushers above it.
+     Wound by the slide, started and stopped by hand. */
+  function autoClock() {
+    var L = live();
+    if (!autoRuns(L)) { clockEls = null; return null; }
+
+    var face = el('div.wt-glass', { html: clockFace() });
+    var start = el('button.wt-push', { type: 'button', text: 'Start',
+      'aria-label': 'Start the clock', onclick: autoGo });
+    var stop = el('button.wt-push', { type: 'button', text: 'Stop',
+      'aria-label': 'Stop the clock', onclick: autoHalt });
+
+    var box = el('div.watch', { role: 'timer' }, [
+      el('div.wt-pushers', [start, stop]),
+      face
+    ]);
+
+    clockEls = { box: box,
+                 hands: face.querySelector('.wt-hands'), num: face.querySelector('.wt-num'),
+                 start: start, stop: stop, sec: null };
+    /* Drawn where this slide's countdown actually stands, not from the top:
+       the view is rebuilt every time a phone posts an answer, and a watch that
+       jumped back to full each time would be a lie. Silently, so a redraw does
+       not tick. */
+    paintClock(true);
+    return box;
+  }
+
+  function paintClock(silent) {
+    if (!clockEls) return;
+    var total = Math.max(1, auto.secs * 1000);
+    var left = Math.max(0, auto.left);
+    var sec = Math.ceil(left / 1000);
+
+    // Once a second, which is what makes the hand step rather than glide.
+    if (sec !== clockEls.sec) {
+      var gone = 1 - left / total;
+      clockEls.sec = sec;
+      clockEls.num.textContent = String(sec);
+      /* The CSS property rather than the SVG attribute: only one of the two
+         can be transitioned, and the little overshoot as the hand lands is
+         most of what makes it read as a watch rather than a gauge. */
+      clockEls.hands.style.transform = 'rotate(' + (gone * 360).toFixed(2) + 'deg)';
+      if (!silent && auto.running) tickSound(sec % 2 === 0);
+    }
+    clockEls.box.classList.toggle('low', left <= 5000);
+    clockEls.box.classList.toggle('halted', !auto.running);
+    clockEls.start.disabled = auto.running;
+    clockEls.stop.disabled = !auto.running;
+  }
+
+  /* The switch, beside the button it takes over from. */
+  function autoControl() {
+    var toggle = el('input', { type: 'checkbox', 'aria-label': 'Run the clock and move on by itself' });
+    toggle.checked = auto.on;
+    toggle.addEventListener('change', function () {
+      auto.on = toggle.checked;
+      try { localStorage.setItem(AUTO_KEY, auto.on ? '1' : '0'); } catch (e) {}
+      auto.key = '';                        // whichever way, this slide starts over
+      if (auto.on) unlockSound();           // the press is the gesture that lets it tick
+      autoSync();
+      QC.render();                          // the watch arrives or leaves with it
+    });
+
+    var pick = el('select.select.auto-secs', { 'aria-label': 'Seconds on each slide' },
+      AUTO_CHOICES.map(function (n) { return el('option', { value: String(n) }, n + 's'); }));
+    pick.value = String(auto.secs);
+    pick.addEventListener('change', function () {
+      auto.secs = Number(pick.value);
+      try { localStorage.setItem(AUTO_SECS_KEY, String(auto.secs)); } catch (e) {}
+      auto.key = '';                        // wound again at the new length
+    });
+
+    /* The switch is its own label and the picker sits outside it: a click on a
+       select inside a label is not a click on the switch, and a control that
+       sometimes toggles the thing next to it is worse than one that never
+       does. */
+    return el('div.auto-ctl' + (auto.on ? '.on' : ''), [
+      el('label.switch', [toggle, el('span.track', [el('span.knob')]), el('span.auto-t', { text: 'Clock' })]),
+      pick
+    ]);
+  }
+
   function presenterBar() {
     var L = live();
     var each = L.reveal === 'each';
@@ -1238,6 +1538,7 @@
       } }),
       el('span.count', { text: step.text }),
       el('div.progress', [el('i', { style: { width: step.pct + '%' } })]),
+      autoControl(),
       el('button.nav-big', { type: 'button', disabled: L.phase === 'lobby', onclick: function () {
         QC.net.back().catch(function (e) { QC.toast(e.message); });
       } }, ['‹  Back']),

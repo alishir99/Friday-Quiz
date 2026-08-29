@@ -774,6 +774,8 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
   border-radius: clamp(14px, 1.8vh, 22px);
   box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 10px 30px rgba(0, 0, 0, .05);
   overflow: hidden;
+  /* The countdown ring hangs in its corner. */
+  position: relative;
 }
 .slide-frame > .slide { overflow: visible; flex: 1; min-height: 0; }
 /* On a phone the slide scrolls as a page, so the frame gets out of the way. */
@@ -1047,9 +1049,120 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .nav-big.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .nav-big.primary:hover { background: color-mix(in srgb, var(--accent) 86%, #000); }
 
-.timer-ring { display: flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums;
-  font-size: 16px; font-weight: 600; color: var(--ink-2); }
-.timer-ring.low { color: #d0342c; }
+/* THE CLOCK. The switch that hands the Next button over to a timer, and the
+   watch in the corner of the slide that counts it down.
+
+   Drawn as a watch on purpose: a dial with a hand on it is read at a glance
+   from across a room, or through somebody's screen share, in a way that a bar
+   creeping along the edge of a slide is not - and it is the one thing on the
+   screen that is allowed to be a pleasure to look at. Steel case, a bezel
+   split red and blue, a sunburst navy dial, applied white batons and a slim
+   red hand: a sports chronograph, where the moving part is the loud one. */
+.auto-ctl { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.auto-t { font-size: 15px; font-weight: 550; color: var(--ink-2); }
+.auto-ctl.on .auto-t { color: var(--ink); }
+.auto-secs { width: auto; min-height: 40px; padding: 0 34px 0 12px; font-size: 15px; }
+
+/* Top right of the slide, outside the fit pass that scales the slide itself -
+   the watch keeps its size whatever a slide's content does. */
+.watch {
+  position: absolute; z-index: 2;
+  top: clamp(10px, 1.6vh, 22px); right: clamp(10px, 1.4vw, 24px);
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+}
+.wt-pushers { display: flex; gap: 6px; }
+/* Pushers, not buttons: brushed steel, small caps, nothing filled in. */
+.wt-push {
+  min-height: 26px; padding: 0 12px;
+  border-radius: 999px; border: 1px solid #9aa3ac;
+  background: linear-gradient(#ffffff, #dfe4e9);
+  color: #2f3d4d; cursor: pointer;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  box-shadow: 0 1px 2px rgba(0,0,0,.18);
+  transition: background .18s var(--ease), transform .1s var(--ease), opacity .18s var(--ease);
+}
+.wt-push:hover { background: linear-gradient(#ffffff, #eef2f6); }
+.wt-push:active { transform: translateY(1px); }
+.wt-push[disabled] { opacity: .34; pointer-events: none; }
+
+/* The crystal: the case shadow and the glare across the top live here, so the
+   dial itself stays flat vector and the shine is one gradient over all of it. */
+.wt-glass {
+  position: relative;
+  width: clamp(94px, 13.5vh, 158px); height: clamp(94px, 13.5vh, 158px);
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,.30), 0 14px 34px rgba(0,0,0,.28);
+}
+.wt-glass::after {
+  content: ""; position: absolute; inset: 9%;
+  border-radius: 50%; pointer-events: none;
+  background: linear-gradient(128deg, rgba(255,255,255,.26) 0 20%, rgba(255,255,255,.04) 38% 100%);
+}
+.wt-face { display: block; width: 100%; height: 100%; }
+
+.wt-case { fill: url(#wt-case-g); }
+/* The watch has to have an edge of its own: the slide behind it is white, and
+   a polished steel case lit from above simply dissolves into it. */
+.wt-rim { fill: none; stroke: rgba(6, 16, 32, .85); stroke-width: 3.2; }
+/* The bezel, red from ten round to twelve and blue the rest of the way. */
+.wt-bz-blue { fill: none; stroke: #12419b; stroke-width: 13; }
+.wt-bz-red {
+  fill: none; stroke: #c3121f; stroke-width: 13;
+  /* A circle's stroke starts at three o'clock, so -150 puts the start of the
+     red at ten and its sixth of a turn ends it at twelve. */
+  transform: rotate(-150deg); transform-origin: 100px 100px;
+}
+.wt-bz-tick { stroke: rgba(255,255,255,.7); stroke-width: 1.2; }
+.wt-dial { fill: url(#wt-dial-g); }
+/* The sunburst: alternating hairlines out of the centre, barely there apiece. */
+.wt-ray { stroke: rgba(255,255,255,.05); stroke-width: 1.6; }
+.wt-ray-d { stroke: rgba(0,0,0,.06); }
+/* A minute track: hairlines at the edge, every fifth one solid white. */
+.wt-tick { stroke: rgba(255,255,255,.38); stroke-width: .8; }
+.wt-tick-5 { stroke: rgba(255,255,255,.85); stroke-width: 1.8; }
+/* Applied batons, the polished-steel-and-lume kind. */
+.wt-baton { fill: #f2f6fb; stroke: #7d8ea4; stroke-width: .6; }
+.wt-window { fill: #f4f7fa; stroke: rgba(0,0,0,.35); stroke-width: .9; }
+.wt-num {
+  font-family: Georgia, "Times New Roman", serif; font-size: 23px; font-weight: 600;
+  fill: #0d2247; font-variant-numeric: tabular-nums;
+}
+/* The hand, and the counterweight that balances it. */
+.wt-hand { fill: #e01f26; }
+.wt-tail { fill: #e01f26; }
+.wt-hands {
+  transform-origin: 100px 100px;
+  /* The overshoot as the hand lands is the whole difference between a watch
+     and a gauge. One step a second, never a glide. */
+  transition: transform .14s cubic-bezier(.34, 1.75, .52, 1);
+  filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.34));
+}
+.wt-cap { fill: #dfe4e9; stroke: #7d8ea4; stroke-width: .8; }
+.wt-cap-in { fill: #e01f26; }
+
+/* The last five seconds, said twice: the aperture and the trailing arc go red
+   as well, so it carries to anyone who cannot tell the two colours apart. */
+.watch.low .wt-num { fill: #c3121f; }
+.watch.low .wt-window { fill: #ffffff; stroke: #c3121f; stroke-width: 1.6; }
+.watch.low .wt-glass { animation: wt-beat 1s var(--ease) infinite; }
+@keyframes wt-beat {
+  0%, 100% { transform: scale(1); }
+  16% { transform: scale(1.045); }
+}
+
+/* Stopped by hand: the dial goes quiet rather than disappearing, so it is
+   plain that the clock is there and not running. */
+.watch.halted .wt-glass { opacity: .72; filter: saturate(.55); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-hands { transition: none; }
+  .watch.low .wt-glass { animation: none; }
+}
+
+/* On a phone the stage bar is cramped and the slide is small; the watch would
+   sit on top of the question. It belongs to the projector. */
+@media (max-width: 700px) { .watch { display: none; } }
 
 /* Stage scoreboard */
 .stage-board { display: flex; flex-direction: column; gap: clamp(8px, 1.1vh, 14px); margin-top: clamp(20px,3vh,40px); }
@@ -1535,6 +1648,12 @@ audio.media-player { height: 44px; }
   border: 1px solid var(--line-soft);
   color: var(--ink-2); font-size: 16px; font-weight: 500;
 }
+/* The same clip, with this device's own controls, for a quiz played over a
+   meeting rather than in a room. The line under it is a note, not a heading -
+   the controls are the thing being offered. */
+.play-media-note.own { padding: 12px; gap: 8px; }
+.play-media-note.own > span { font-size: 14px; color: var(--ink-3); text-align: center; }
+.play-media-note.own video.media-player { max-height: 34vh; }
 
 /* THE RIBBON: a glowing trace, wherever a clip is playing.
 
@@ -1749,7 +1868,7 @@ audio.media-player { height: 44px; }
   .board-row .nm { font-size: 17px; }
   .board-row .sc { font-size: 20px; }
   .stage-bar { gap: 8px; padding: 12px 14px; }
-  .stage-bar .count, .stage-bar .progress { display: none; }
+  .stage-bar .count, .stage-bar .progress, .auto-t { display: none; }
   .nav-big { flex: 1; padding: 0 14px; font-size: 16px; }
 }
 
