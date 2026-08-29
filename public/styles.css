@@ -1652,6 +1652,17 @@ audio.media-player { height: 44px; }
    meeting rather than in a room. The line under it is a note, not a heading -
    the controls are the thing being offered. */
 .play-media-note.own { padding: 12px; gap: 8px; }
+
+/* THE SAME CARD, ON A PLAYER'S OWN SCREEN.
+   The big screen's clip card, sized for a hand: the trace, the play button and
+   the scrubber are the same ones, because it is the same clip. */
+.play-clip { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.np.own { padding: 10px 14px 14px; border-radius: var(--r-lg); }
+.np.own .ribbon.sm { height: 44px; }
+.np.own .np-bar { gap: 12px; margin-top: 8px; }
+.np.own .np-play { width: 48px; height: 48px; }
+.np.own .np-t { font-size: 13px; }
+.play-clip-note { font-size: 14px; color: var(--ink-3); text-align: center; }
 .play-media-note.own > span { font-size: 14px; color: var(--ink-3); text-align: center; }
 .play-media-note.own video.media-player { max-height: 34vh; }
 
@@ -1869,6 +1880,9 @@ audio.media-player { height: 44px; }
   .board-row .sc { font-size: 20px; }
   .stage-bar { gap: 8px; padding: 12px 14px; }
   .stage-bar .count, .stage-bar .progress, .auto-t { display: none; }
+  /* The clock belongs to the projector, and its switch will not fit beside the
+     buttons on a phone anyway. */
+  .stage-bar .auto-ctl { display: none; }
   .nav-big { flex: 1; padding: 0 14px; font-size: 16px; }
 }
 

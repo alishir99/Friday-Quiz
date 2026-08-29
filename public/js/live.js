@@ -190,14 +190,14 @@
      saved it as, and that is very often the answer. */
   var clipCache = {};
 
-  function nowPlaying(url) {
+  function nowPlaying(url, small) {
     /* The same element every time this slide is drawn. A fresh <audio> would
        start the clip again from nought the moment anybody's phone reconnected,
        which on a slide the room is listening to is the whole ballgame. */
     var audio = clipEl(url, 'audio');
     audio.controls = false;                 // the card below is its controls
 
-    var card = el('div.np');
+    var card = el('div.np' + (small ? '.own' : ''));
     var icon = el('button.np-play', {
       type: 'button', 'aria-label': 'Play the clip',
       onclick: function () {
@@ -239,7 +239,7 @@
     };
 
     QC.append(card, [
-      ribbon('lg'),
+      ribbon(small ? 'sm' : 'lg'),
       el('div.np-bar', [
         icon,
         el('div.np-track', [elapsed, seek, total])
@@ -264,9 +264,7 @@
     + '<rect x="6" y="4.5" width="4.2" height="15" rx="1.4"/>'
     + '<rect x="13.8" y="4.5" width="4.2" height="15" rx="1.4"/></svg>';
 
-  /* On a player's own device. Pictures are needed to answer, but a roomful of
-     them playing the same clip a half-second apart would be chaos, so sound and
-     video stay on the big screen. */
+  /* On a player's own device. */
   function phoneMedia(m) {
     if (!m) return null;
     var url = QC.mediaUrl(m);
@@ -275,26 +273,34 @@
     if (m.kind === 'image') {
       return el('img.play-media', { src: url, alt: 'Picture for this question' });
     }
-    /* The clip again, here, with this device's own controls.
+    /* The clip again, here, in the same card the big screen draws it in - the
+       trace, the round play button, the scrubber. It is the same clip, so it
+       should look like the same thing, and the wave moving is what says at a
+       glance that it is running and not stuck.
 
-       It used to say "listen to the big screen", which assumes there is one.
-       Played over a meeting there is not: the big screen is somebody's shared
-       window, and it only carries sound at all if whoever is sharing turned
-       that on - so half a quiz can sit there hearing nothing. This is the way
-       out of that, and it works the same for someone in another country.
+       This screen used to say "listen to the big screen", which assumes there
+       is one. Played over a meeting there is not: the big screen is somebody's
+       shared window, and it carries sound only if whoever is sharing turned
+       that on - so half a quiz can sit there hearing nothing.
 
-       Silent until it is pressed. In a real room, twenty devices starting a
-       half-second apart is exactly the mess the old note existed to avoid, so
-       nothing here starts on its own. */
-    var clip = clipEl(url, m.kind);
+       Silent until it is pressed, and pressed on this device only. A room full
+       of handsets all starting together, a fraction of a second apart and over
+       the top of the projector, is a mess nobody can talk over - so the press
+       is each person's own, wherever they are sitting. */
+    if (m.kind === 'audio') {
+      return el('div.play-clip', [
+        nowPlaying(url, true),
+        el('span.play-clip-note', { text: 'Playing on the big screen too.' })
+      ]);
+    }
+
+    var clip = clipEl(url, 'video');
     clip.className = 'media-player';
     clip.controls = true;
-    if (m.kind === 'video') clip.setAttribute('playsinline', '');
+    clip.setAttribute('playsinline', '');
     return el('div.play-media-note.own', [
       clip,
-      el('span', { text: m.kind === 'audio'
-        ? 'Playing on the big screen too. Press play if you cannot hear it there.'
-        : 'Playing on the big screen too. Press play to watch it here.' })
+      el('span', { text: 'Playing on the big screen too. Press play to watch it here.' })
     ]);
   }
 
