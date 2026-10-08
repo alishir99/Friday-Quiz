@@ -1114,8 +1114,9 @@
   function tallyBox(kind) {
     var fill = el('i');
     var text = el('div.tally-text');
-    var box = el('div.tally', [el('div.tally-bar', [fill]), text]);
-    tally = { box: box, fill: fill, text: text, kind: kind };
+    var who = el('div.tally-who');
+    var box = el('div.tally', [el('div.tally-bar', [fill]), text, who]);
+    tally = { box: box, fill: fill, text: text, who: who, kind: kind };
     writeCounts();
     return box;
   }
@@ -1128,6 +1129,9 @@
     tally.fill.style.width = (total ? (done / total) * 100 : 0) + '%';
     tally.text.textContent = allIn ? 'Everyone has ' + verb : done + ' of ' + total + ' ' + verb;
     tally.box.classList.toggle('all-in', allIn);
+    // Names whoever is still out, so the room knows who to nudge.
+    var waiting = (L.waitingOn || []).map(function (id) { return QC.name(id).split(/\s+/)[0]; });
+    tally.who.textContent = !allIn && waiting.length ? 'Still waiting on: ' + waiting.join(', ') : '';
   }
 
   /* net.js calls this instead of redrawing when somebody else's answer lands.

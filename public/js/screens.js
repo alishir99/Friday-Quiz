@@ -759,11 +759,29 @@
         QC.net.resetPassword(u.id).then(function (r) {
           var out = el('input.input', { readonly: true, value: r.tempPassword });
           out.addEventListener('click', function () { out.select(); });
+          /* Copy closes it, so the password is in hand by the time it goes.
+             The clipboard API needs https or localhost; anywhere else the
+             older command copies the selected field instead. */
+          var btn = el('button.btn.primary', { type: 'button', text: 'Copy', onclick: function () {
+            var done = function () {
+              btn.textContent = '✓ Copied';
+              btn.disabled = true;
+              setTimeout(QC.closeSheet, 800);
+            };
+            var fallback = function () {
+              out.select();
+              var ok = false;
+              try { ok = document.execCommand('copy'); } catch (e) {}
+              if (ok) done(); else QC.toast('Could not copy - select it and copy by hand');
+            };
+            if (navigator.clipboard) navigator.clipboard.writeText(r.tempPassword).then(done, fallback);
+            else fallback();
+          } });
           QC.sheet({
             title: 'Temporary password for ' + u.name,
             sub: 'They can sign in with this right away, then change it from their own account menu.',
             content: el('div.field', [out]),
-            actions: [el('button.btn.primary', { type: 'button', text: 'Done', onclick: QC.closeSheet })]
+            actions: [btn]
           });
           setTimeout(function () { out.select(); }, 40);
         }).catch(function (e) { QC.toast(e.message); });

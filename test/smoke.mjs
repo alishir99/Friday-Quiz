@@ -390,6 +390,9 @@ test('the running score never counts ahead of the reveal', async () => {
   let seen = await stateAs('bea');
   assert.deepEqual(seen.live.myScore, { right: 0, of: 0 },
     'answered but not yet marked, so there is nothing to show');
+  assert.ok(!seen.live.waitingOn.includes(seen.me), 'whoever answered drops off the waiting list');
+  assert.equal(seen.live.waitingOn.length, seen.live.playerCount - seen.live.answeredCount,
+    'and the list names exactly the ones the counter is short');
 
   await call('/api/live/advance', { method: 'POST', as: 'ali' });          // a0
   seen = await stateAs('bea');

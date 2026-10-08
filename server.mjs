@@ -1131,6 +1131,10 @@ function stateFor(userId, team) {
       answeredCount: others.filter((p) => (live.answers[p] || {})[live.index] !== undefined).length,
       playerCount: others.length,
       tieCount: others.filter((p) => live.tieGuesses[p] !== undefined).length,
+      // Who the counter is still waiting for, named under it on the big screen.
+      waitingOn: others.filter((p) => (live.phase === 'tb'
+        ? live.tieGuesses[p] === undefined
+        : (live.answers[p] || {})[live.index] === undefined)),
       myAnswers: mine,
       myTieGuess: live.tieGuesses[userId] ?? null,
       /* A running score, counted only over the answers already shown. Counting

@@ -1062,6 +1062,7 @@ body.assist-resizing .assist-dock-body { pointer-events: none; }
 .auto-t { font-size: 15px; font-weight: 550; color: var(--ink-2); }
 .auto-ctl.on .auto-t { color: var(--ink); }
 .auto-secs { width: auto; min-height: 40px; padding: 0 34px 0 12px; font-size: 15px; }
+.auto-ctl:not(.on) .auto-secs { display: none; }
 
 /* Top right of the slide, outside the fit pass that scales the slide itself -
    the watch keeps its size whatever a slide's content does. */
@@ -1454,6 +1455,10 @@ body.playing .app { padding: 0; max-width: none; }
   margin-top: 12px; font-size: clamp(16px, 1.6vw, 24px);
   color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums;
 }
+.tally-who {
+  margin-top: 6px; font-size: clamp(14px, 1.3vw, 20px); color: var(--ink-3);
+}
+.tally-who:empty { display: none; }
 .tally.all-in .tally-bar i { background: var(--good); }
 .tally.all-in .tally-text { color: var(--good); font-weight: 600; }
 
