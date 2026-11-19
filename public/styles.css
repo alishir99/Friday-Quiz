@@ -2590,6 +2590,14 @@ body.playing:not(.presenting) .play-fit > .play {
   opacity: .55;
 }
 .play-leave:hover, .play-leave:focus-visible { opacity: 1; }
+/* The ✕ sits in the card's top-left corner, right where "Question 1 of 10"
+   starts - so the header line begins after it instead of underneath it. */
+.play-fit .play-head { padding-left: 40px; }
+/* Two answers to a row leave a phone about 50px of text per answer, and the
+   ✓ took 20 of those - "Saturn" broke into "Satur / n". In the corner it
+   takes nothing from the text. */
+.play-opts.opts-tight .play-opt { position: relative; }
+.play-opts.opts-tight .play-opt .tick { position: absolute; top: 4px; right: 9px; font-size: 16px; }
 
 /* Stepped out while the game carries on. Sits above everything else on the
    home screen, because it is the only thing on it that is happening now. */
